@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { RequestPanel } from './components/RequestPanel';
 import { ResponsePanel } from './components/ResponsePanel';
+import { CollectionConfigPanel } from './components/CollectionConfigPanel';
 import { KeyValueEditor } from './components/KeyValueEditor';
 import { Modal } from './components/common/Modal';
 import { TabButton } from './components/common/TabButton';
@@ -20,6 +21,7 @@ import {
   ApiTab,
 } from './types';
 import { DLoading } from './services/DLoading';
+import { DAlert } from './services/DAlert';
 import {
   executeHttpRequest,
   fetchHistory,
@@ -29,6 +31,7 @@ import {
   fetchCollections,
   createCollectionGroup,
   updateCollectionGroupConfig,
+  updateCollectionGroupNameApi,
   deleteCollectionGroupApi,
   saveCollectionRequestItem,
   deleteCollectionRequestItemApi,
@@ -584,6 +587,34 @@ export const App: React.FC = () => {
     );
   };
 
+  const handleRenameCollectionGroup = async (id: string, newName: string) => {
+    DLoading('컬렉션 폴더 이름 저장 중...');
+    await updateCollectionGroupNameApi(id, newName);
+    setCollections((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, name: newName } : c))
+    );
+    setTabs((prev) => {
+      const updatedTabs = prev.map((t) => {
+        const isConfigTab = t.configCollectionId === id || t.id === `tab-config-${id}`;
+        const isActiveCollectionMatch = t.activeCollection?.id === id;
+
+        if (isConfigTab || isActiveCollectionMatch) {
+          return {
+            ...t,
+            title: isConfigTab ? `📁 ${newName} 설정` : t.title,
+            activeCollection: t.activeCollection
+              ? { ...t.activeCollection, name: newName }
+              : t.activeCollection,
+          };
+        }
+        return t;
+      });
+      saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: updatedTabs, activeTabId });
+      return updatedTabs;
+    });
+    DLoading.dismiss('컬렉션 이름이 변경되었습니다!');
+  };
+
   const handleDeleteCollectionItem = async (id: string) => {
     await deleteCollectionRequestItemApi(id);
     setCollections((prev) =>
@@ -618,8 +649,89 @@ export const App: React.FC = () => {
     DLoading.dismiss('컬렉션 설정이 저장되었습니다!');
   };
 
+  const handleOpenCollectionConfigTab = (colGroup: CollectionGroup) => {
+    const existingTab = tabs.find((t) => t.configCollectionId === colGroup.id || t.id === `tab-config-${colGroup.id}`);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      return;
+    }
+
+    const newTabId = `tab-config-${colGroup.id}`;
+    const newTab: ApiTab = {
+      id: newTabId,
+      title: `📁 ${colGroup.name} 설정`,
+      request: createDefaultRequest(),
+      response: null,
+      activeCollection: colGroup,
+      type: 'collectionConfig',
+      configCollectionId: colGroup.id,
+    };
+    const newTabs = [...tabs, newTab];
+    setTabs(newTabs);
+    setActiveTabId(newTabId);
+    saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: newTabs, activeTabId: newTabId });
+  };
+
+  const handleSaveCollectionConfigDirect = async (
+    collectionId: string,
+    variables: KeyValueItem[],
+    headers: KeyValueItem[]
+  ) => {
+    await updateCollectionGroupConfig(collectionId, variables, headers);
+    setCollections((prev) =>
+      prev.map((col) =>
+        col.id === collectionId ? { ...col, variables, headers } : col
+      )
+    );
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.activeCollection?.id === collectionId
+          ? { ...t, activeCollection: { ...t.activeCollection!, variables, headers } }
+          : t
+      )
+    );
+  };
+
+  const handleAddRequestToCollection = async (colGroup: CollectionGroup) => {
+    const reqName = await DAlert.promptAsync(`'${colGroup.name}' 폴더에 추가할 새 API 요청 이름을 입력하세요:`, {
+      title: '새 API 요청 생성',
+      promptPlaceholder: '예: 회원가입 API 요청',
+      promptDefaultValue: '새 API 요청',
+      type: 'info',
+    });
+    if (!reqName || !reqName.trim()) return;
+
+    DLoading('컬렉션에 새 API 요청 생성 중...');
+    const savedItem = await saveCollectionRequestItem({
+      collectionId: colGroup.id,
+      name: reqName.trim(),
+      method: 'GET',
+      url: '{{baseUrl}}/api/echo',
+      params: [],
+      headers: [],
+      body: '',
+    });
+
+    if (savedItem) {
+      setCollections((prev) =>
+        prev.map((c) =>
+          c.id === colGroup.id ? { ...c, items: [...(c.items || []), savedItem] } : c
+        )
+      );
+      // Open newly created request in right main panel tab
+      handleSelectCollectionItem(savedItem, colGroup);
+      DLoading.dismiss('새 API 요청이 생성되었습니다!');
+    } else {
+      DLoading.dismiss('요청 생성에 실패했습니다.');
+    }
+  };
+
   const handleCreateFolderDirectly = async () => {
-    const name = prompt('새 컬렉션 폴더 이름을 입력하세요 (예: 쇼핑몰 API 프로젝트):');
+    const name = await DAlert.promptAsync('새 컬렉션 폴더 이름을 입력하세요:', {
+      title: '새 컬렉션 폴더 생성',
+      promptPlaceholder: '예: 쇼핑몰 API 프로젝트',
+      type: 'info',
+    });
     if (!name || !name.trim()) return;
 
     DLoading('새 컬렉션 폴더 생성 중...');
@@ -662,7 +774,9 @@ export const App: React.FC = () => {
           onSelectCollectionItem={handleSelectCollectionItem}
           onDeleteCollectionGroup={handleDeleteCollectionGroup}
           onDeleteCollectionItem={handleDeleteCollectionItem}
-          onOpenCollectionConfig={(colGroup) => setConfigCollectionModalTarget(colGroup)}
+          onOpenCollectionConfig={handleOpenCollectionConfigTab}
+          onRenameCollectionGroup={handleRenameCollectionGroup}
+          onAddRequestToCollection={handleAddRequestToCollection}
           user={user}
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onCreateFolderClick={handleCreateFolderDirectly}
@@ -687,50 +801,69 @@ export const App: React.FC = () => {
             background: 'var(--bg-primary)'
           }}
         >
-          {/* Active Collection Inheritance Status Bar */}
-          {activeTab.activeCollection && (
-            <div style={{
-              background: 'rgba(99, 102, 241, 0.1)',
-              borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
-              padding: '6px 16px',
-              fontSize: '0.78rem',
-              color: '#818cf8',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexShrink: 0
-            }}>
-              <span>
-                📁 활성화된 컬렉션 폴더: <strong>{activeTab.activeCollection.name}</strong> (공통 변수 {activeTab.activeCollection.variables.length}개, 공통 헤더 {activeTab.activeCollection.headers.length}개 상속 중)
-              </span>
-              <button
-                onClick={() => updateActiveTab({ activeCollection: null })}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer', fontSize: '0.75rem' }}
-              >
-                상속 해제
-              </button>
-            </div>
+          {activeTab.type === 'collectionConfig' ? (
+            <CollectionConfigPanel
+              collection={
+                collections.find((c) => c.id === activeTab.configCollectionId) ||
+                activeTab.activeCollection || {
+                  id: activeTab.configCollectionId || '',
+                  name: activeTab.title.replace('📁 ', '').replace(' 설정', ''),
+                  variables: [],
+                  headers: [],
+                  items: [],
+                  timestamp: new Date().toISOString(),
+                }
+              }
+              onSaveConfig={handleSaveCollectionConfigDirect}
+            />
+          ) : (
+            <>
+              {/* Active Collection Inheritance Status Bar */}
+              {activeTab.activeCollection && (
+                <div style={{
+                  background: 'rgba(99, 102, 241, 0.1)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
+                  padding: '6px 16px',
+                  fontSize: '0.78rem',
+                  color: '#818cf8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexShrink: 0
+                }}>
+                  <span>
+                    📁 활성화된 컬렉션 폴더: <strong>{activeTab.activeCollection.name}</strong> (공통 변수 {activeTab.activeCollection.variables.length}개, 공통 헤더 {activeTab.activeCollection.headers.length}개 상속 중)
+                  </span>
+                  <button
+                    onClick={() => updateActiveTab({ activeCollection: null })}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer', fontSize: '0.75rem' }}
+                  >
+                    상속 해제
+                  </button>
+                </div>
+              )}
+
+              {/* Top Panel: Request Panel */}
+              <RequestPanel
+                height={requestPanelHeight}
+                request={activeTab.request}
+                onChange={handleRequestChange}
+                onSend={handleSend}
+                isLoading={isLoading}
+                onOpenSaveCollection={handleOpenSaveCollection}
+              />
+
+              {/* Horizontal Resizer between Request Panel and Response Panel */}
+              <div
+                className={`resizer-horizontal ${isDraggingBody ? 'active' : ''}`}
+                onMouseDown={handleBodyMouseDown}
+                title="드래그하여 요청/응답 패널 높이 조절"
+              />
+
+              {/* Middle Panel: Response Panel */}
+              <ResponsePanel response={activeTab.response} isLoading={isLoading} />
+            </>
           )}
-
-          {/* Top Panel: Request Panel */}
-          <RequestPanel
-            height={requestPanelHeight}
-            request={activeTab.request}
-            onChange={handleRequestChange}
-            onSend={handleSend}
-            isLoading={isLoading}
-            onOpenSaveCollection={handleOpenSaveCollection}
-          />
-
-          {/* Horizontal Resizer between Request Panel and Response Panel */}
-          <div
-            className={`resizer-horizontal ${isDraggingBody ? 'active' : ''}`}
-            onMouseDown={handleBodyMouseDown}
-            title="드래그하여 요청/응답 패널 높이 조절"
-          />
-
-          {/* Middle Panel: Response Panel */}
-          <ResponsePanel response={activeTab.response} isLoading={isLoading} />
 
           {/* Bottom Panel Frame: Excel Spreadsheet Sheet Tab Bar */}
           <SpreadsheetTabBar

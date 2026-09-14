@@ -563,6 +563,29 @@ export const updateCollectionGroupConfig = async (
   }
 };
 
+export const updateCollectionGroupNameApi = async (
+  collectionId: string,
+  newName: string
+): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('collections')
+      .update({ name: newName })
+      .eq('id', collectionId);
+
+    // Also update local storage
+    const locals = getStoredLocalCollections();
+    const updatedLocals = locals.map((c) =>
+      c.id === collectionId ? { ...c, name: newName } : c
+    );
+    saveStoredLocalCollections(updatedLocals);
+
+    return !error;
+  } catch (e) {
+    return false;
+  }
+};
+
 export const deleteCollectionGroupApi = async (id: string): Promise<boolean> => {
   try {
     await supabase.from('collections').delete().eq('id', id);

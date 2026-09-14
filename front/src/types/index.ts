@@ -68,5 +68,7 @@ export interface ApiTab {
   request: RequestState;
   response: ResponseResult | null;
   activeCollection: CollectionGroup | null;
+  type?: 'request' | 'collectionConfig';
+  configCollectionId?: string;
 }
 

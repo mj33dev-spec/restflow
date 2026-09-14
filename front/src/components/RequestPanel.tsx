@@ -3,6 +3,8 @@ import { Send, Code, Sliders, Layers, Sparkles, BookmarkPlus, Braces } from 'luc
 import { RequestState, HttpMethod } from '../types';
 import { KeyValueEditor } from './KeyValueEditor';
 import { TabButton } from './common/TabButton';
+import { MethodBadge } from './common/MethodBadge';
+import { CDropdown } from './common/CDropdown';
 
 interface RequestPanelProps {
   height?: number;
@@ -61,35 +63,25 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
         background: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border-color)'
       }}>
-        {/* Method Selector */}
-        <select
-          value={request.method}
-          onChange={(e) => {
-            const newMethod = e.target.value as HttpMethod;
-            onChange({ ...request, method: newMethod });
-            if ((newMethod === 'GET' || newMethod === 'HEAD') && activeSubTab === 'body') {
-              setActiveSubTab('params');
-            }
-          }}
-          style={{
-            height: '42px',
-            background: 'var(--bg-tertiary)',
-            color: '#fff',
-            fontWeight: 700,
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            padding: '0 14px',
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            outline: 'none'
-          }}
-        >
-          {methods.map((m) => (
-            <option key={m} value={m} style={{ background: '#1e293b' }}>
-              {m}
-            </option>
-          ))}
-        </select>
+        {/* Method Selector using common CDropdown */}
+        <CDropdown.fill
+          value={<MethodBadge method={request.method} />}
+          minWidth="125px"
+          options={methods.map((m) => ({
+            label: (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+                <MethodBadge method={m} />
+              </span>
+            ),
+            active: request.method === m,
+            onClick: () => {
+              onChange({ ...request, method: m });
+              if ((m === 'GET' || m === 'HEAD') && activeSubTab === 'body') {
+                setActiveSubTab('params');
+              }
+            },
+          }))}
+        />
 
         {/* URL Input */}
         <input

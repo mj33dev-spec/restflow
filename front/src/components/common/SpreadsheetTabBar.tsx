@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Table, Edit3 } from 'lucide-react';
+import { Plus, X, Table, Edit3, Folder } from 'lucide-react';
 import { ApiTab } from '../../types';
 import { MethodBadge } from './MethodBadge';
 
@@ -105,7 +105,11 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
               }}
               title="더블클릭하여 시트 이름 변경"
             >
-              <MethodBadge method={tab.request.method} fontSize="0.65rem" padding="1px 5px" />
+              {tab.type === 'collectionConfig' ? (
+                <Folder size={14} color="var(--accent-primary)" />
+              ) : (
+                <MethodBadge method={tab.request.method} fontSize="0.65rem" padding="1px 5px" />
+              )}
 
               {isEditing ? (
                 <input

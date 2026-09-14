@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { History, Bookmark, Trash2, Clock, LogIn, Folder, ChevronDown, ChevronRight, Settings, Plus } from 'lucide-react';
+import { History, Bookmark, Trash2, Clock, LogIn, Folder, ChevronDown, ChevronRight, Settings, Plus, Pencil } from 'lucide-react';
 import { HistoryItem, CollectionGroup, CollectionRequestItem } from '../types';
 import { MethodBadge } from './common/MethodBadge';
 import { EmptyState } from './common/EmptyState';
 import { TabButton } from './common/TabButton';
+import { DAlert } from '../services/DAlert';
 
 interface SidebarProps {
   width?: number;
@@ -16,6 +17,8 @@ interface SidebarProps {
   onDeleteCollectionGroup: (id: string) => void;
   onDeleteCollectionItem: (id: string) => void;
   onOpenCollectionConfig: (collection: CollectionGroup) => void;
+  onRenameCollectionGroup?: (id: string, newName: string) => Promise<void>;
+  onAddRequestToCollection?: (collection: CollectionGroup) => void;
   user: any;
   onOpenAuthModal: () => void;
   onCreateFolderClick: () => void;
@@ -32,12 +35,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteCollectionGroup,
   onDeleteCollectionItem,
   onOpenCollectionConfig,
+  onRenameCollectionGroup,
+  onAddRequestToCollection,
   user,
   onOpenAuthModal,
   onCreateFolderClick,
 }) => {
   const [activeTab, setActiveTab] = useState<'history' | 'collections'>('history');
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editingFolderName, setEditingFolderName] = useState<string>('');
+  const [hoveredFolderId, setHoveredFolderId] = useState<string | null>(null);
 
   const historyList = Array.isArray(history) ? history : [];
   const collectionList = Array.isArray(collections) ? collections : [];
@@ -47,6 +55,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ...prev,
       [folderId]: prev[folderId] === undefined ? true : !prev[folderId]
     }));
+  };
+
+  const handleFinishRename = async (folderId: string) => {
+    if (!editingFolderName.trim()) {
+      setEditingFolderId(null);
+      return;
+    }
+    if (onRenameCollectionGroup) {
+      await onRenameCollectionGroup(folderId, editingFolderName.trim());
+    }
+    setEditingFolderId(null);
   };
 
   return (
@@ -292,7 +311,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     {/* Folder Header */}
                     <div
-                      onClick={() => toggleFolder(colGroup.id)}
+                      onClick={() => onOpenCollectionConfig(colGroup)}
+                      title="클릭 시 컬렉션 공통 설정(변수/헤더) 열기"
                       style={{
                         padding: '10px 12px',
                         display: 'flex',
@@ -300,44 +320,137 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         justifyContent: 'space-between',
                         cursor: 'pointer',
                         background: 'rgba(255,255,255,0.03)',
-                        borderBottom: isExpanded && items.length > 0 ? '1px solid var(--border-color)' : 'none'
+                        borderBottom: isExpanded && items.length > 0 ? '1px solid var(--border-color)' : 'none',
+                        transition: 'background 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                        {isExpanded ? <ChevronDown size={15} color="var(--accent-primary)" /> : <ChevronRight size={15} color="var(--text-subtle)" />}
-                        <Folder size={16} color="var(--accent-primary)" />
-                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {colGroup.name}
-                        </span>
+                        {/* 1. Grouped Fold/Expand Toggle Button (Arrow + Folder Icon) */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFolder(colGroup.id);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            borderRadius: '4px',
+                            background: 'rgba(255,255,255,0.05)'
+                          }}
+                          title={isExpanded ? '폴더 접기' : '폴더 펼치기'}
+                        >
+                          {isExpanded ? <ChevronDown size={15} color="var(--accent-primary)" /> : <ChevronRight size={15} color="var(--text-subtle)" />}
+                          <Folder size={16} color="var(--accent-primary)" />
+                        </div>
+
+                        {/* 2. Inline Name Editor on Hover / Click */}
+                        {editingFolderId === colGroup.id ? (
+                          <input
+                            type="text"
+                            value={editingFolderName}
+                            onChange={(e) => setEditingFolderName(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleFinishRename(colGroup.id);
+                              if (e.key === 'Escape') setEditingFolderId(null);
+                            }}
+                            onBlur={() => handleFinishRename(colGroup.id)}
+                            autoFocus
+                            style={{
+                              background: '#0d1117',
+                              border: '1px solid var(--accent-primary)',
+                              color: '#fff',
+                              fontSize: '0.85rem',
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              outline: 'none',
+                              width: '120px'
+                            }}
+                          />
+                        ) : (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingFolderId(colGroup.id);
+                              setEditingFolderName(colGroup.name);
+                            }}
+                            onMouseEnter={() => setHoveredFolderId(colGroup.id)}
+                            onMouseLeave={() => setHoveredFolderId(null)}
+                            style={{
+                              fontWeight: 700,
+                              fontSize: '0.85rem',
+                              color: '#fff',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              borderBottom: hoveredFolderId === colGroup.id ? '1px dashed var(--accent-primary)' : '1px solid transparent',
+                              transition: 'all 0.15s ease'
+                            }}
+                            title="클릭하여 컬렉션 이름 수정"
+                          >
+                            {colGroup.name}
+                            <Pencil
+                              size={12}
+                              style={{
+                                opacity: hoveredFolderId === colGroup.id ? 1 : 0,
+                                transition: 'opacity 0.15s ease',
+                                color: 'var(--accent-primary)'
+                              }}
+                            />
+                          </span>
+                        )}
+
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>
                           ({items.length})
                         </span>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        {/* Collection Settings Button */}
+                        {/* Add API Request to Collection Button */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onOpenCollectionConfig(colGroup);
+                            if (onAddRequestToCollection) {
+                              onAddRequestToCollection(colGroup);
+                            }
                           }}
                           style={{
                             background: 'transparent',
                             border: 'none',
-                            color: (colGroup.variables?.length || colGroup.headers?.length) ? 'var(--accent-primary)' : 'var(--text-subtle)',
+                            color: 'var(--accent-primary)',
                             cursor: 'pointer',
-                            padding: '4px'
+                            padding: '4px',
+                            display: 'flex',
+                            alignItems: 'center'
                           }}
-                          title="컬렉션 공통 설정 (변수 / 헤더)"
+                          title="이 폴더에 새 API 요청 추가"
                         >
-                          <Settings size={14} />
+                          <Plus size={15} />
                         </button>
 
                         {/* Delete Folder Button */}
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            if (confirm(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`)) {
+                            const confirmed = await DAlert.confirmAsync(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`, {
+                              title: '컬렉션 폴더 삭제',
+                              type: 'error',
+                            });
+                            if (confirmed) {
                               onDeleteCollectionGroup(colGroup.id);
                             }
                           }}
