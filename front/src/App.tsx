@@ -8,6 +8,7 @@ import { KeyValueEditor } from './components/KeyValueEditor';
 import { Modal } from './components/common/Modal';
 import { TabButton } from './components/common/TabButton';
 import { MethodBadge } from './components/common/MethodBadge';
+import { SpreadsheetTabBar } from './components/common/SpreadsheetTabBar';
 import {
   RequestState,
   ResponseResult,
@@ -16,7 +17,9 @@ import {
   CollectionRequestItem,
   HttpMethod,
   KeyValueItem,
+  ApiTab,
 } from './types';
+import { DLoading } from './services/DLoading';
 import {
   executeHttpRequest,
   fetchHistory,
@@ -38,21 +41,48 @@ import {
   saveUserSettings,
 } from './services/apiService';
 
+const createDefaultRequest = (): RequestState => ({
+  method: 'GET',
+  url: '{{baseUrl}}/api/echo?query={{queryVal}}',
+  params: [
+    { id: '1', key: 'query', value: '{{queryVal}}', enabled: true },
+    { id: '2', key: 'page', value: '1', enabled: true },
+  ],
+  headers: [
+    { id: 'h1', key: 'Content-Type', value: 'application/json', enabled: true },
+    { id: 'h2', key: 'Accept', value: 'application/json', enabled: true },
+  ],
+  variables: [
+    { id: 'v1', key: 'baseUrl', value: 'http://localhost:3002', enabled: true },
+    { id: 'v2', key: 'queryVal', value: 'hello', enabled: true },
+  ],
+  bodyType: 'json',
+  body: '{\n  "client": "RestFlow React",\n  "test": true\n}',
+  useProxy: true,
+});
+
+const createInitialTab = (id = 'tab-1', title = '요청 1'): ApiTab => ({
+  id,
+  title,
+  request: createDefaultRequest(),
+  response: null,
+  activeCollection: null,
+});
+
 export const App: React.FC = () => {
   const [useProxy, setUseProxy] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [response, setResponse] = useState<ResponseResult | null>(null);
-  
+
+  // Multi-Tab Api States
+  const [tabs, setTabs] = useState<ApiTab[]>([createInitialTab('tab-1', '요청 1')]);
+  const [activeTabId, setActiveTabId] = useState<string>('tab-1');
+
   // Auth & DB states
   const [user, setUser] = useState<any>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [collections, setCollections] = useState<CollectionGroup[]>([]);
-  
-  // Active Collection for Variable & Header Inheritance
-  const [activeCollection, setActiveCollection] = useState<CollectionGroup | null>(null);
 
-  // --- Modal States & Controls ---
-  // 1. Auth Modal State
+  // --- Modal States ---
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authEmail, setAuthEmail] = useState<string>('');
@@ -60,14 +90,12 @@ export const App: React.FC = () => {
   const [authErrorMsg, setAuthErrorMsg] = useState<string>('');
   const [authLoading, setAuthLoading] = useState<boolean>(false);
 
-  // 2. Save Collection Modal State
   const [isSaveCollectionModalOpen, setIsSaveCollectionModalOpen] = useState<boolean>(false);
   const [saveFolderId, setSaveFolderId] = useState<string>('new');
   const [saveNewFolderName, setSaveNewFolderName] = useState<string>('');
   const [saveRequestName, setSaveRequestName] = useState<string>('');
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
 
-  // 3. Collection Config Modal State
   const [configCollectionModalTarget, setConfigCollectionModalTarget] = useState<CollectionGroup | null>(null);
   const [configActiveTab, setConfigActiveTab] = useState<'variables' | 'headers'>('variables');
   const [configVariables, setConfigVariables] = useState<KeyValueItem[]>([]);
@@ -81,25 +109,59 @@ export const App: React.FC = () => {
 
   const mainContainerRef = React.useRef<HTMLElement | null>(null);
 
-  const [request, setRequest] = useState<RequestState>({
-    method: 'GET',
-    url: '{{baseUrl}}/api/echo?query={{queryVal}}',
-    params: [
-      { id: '1', key: 'query', value: '{{queryVal}}', enabled: true },
-      { id: '2', key: 'page', value: '1', enabled: true },
-    ],
-    headers: [
-      { id: 'h1', key: 'Content-Type', value: 'application/json', enabled: true },
-      { id: 'h2', key: 'Accept', value: 'application/json', enabled: true },
-    ],
-    variables: [
-      { id: 'v1', key: 'baseUrl', value: 'http://localhost:3002', enabled: true },
-      { id: 'v2', key: 'queryVal', value: 'hello', enabled: true },
-    ],
-    bodyType: 'json',
-    body: '{\n  "client": "RestFlow React",\n  "test": true\n}',
-    useProxy: true,
-  });
+  // Active Tab Helper
+  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0] || createInitialTab();
+
+  const updateActiveTab = (partial: Partial<ApiTab>) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeTab.id ? { ...t, ...partial } : t))
+    );
+  };
+
+  const handleRequestChange = (newReq: RequestState) => {
+    let newTitle = activeTab.title;
+    // Auto-update tab title if default title format
+    if (newTitle.startsWith('요청 ') || newTitle.includes('/')) {
+      if (newReq.url && newReq.url.trim()) {
+        const pathPart = newReq.url.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+        newTitle = `${newReq.method} ${pathPart || newReq.url}`;
+      }
+    }
+    updateActiveTab({ request: newReq, title: newTitle });
+  };
+
+  const handleCreateTab = (customReq?: RequestState, customTitle?: string, collection?: CollectionGroup | null) => {
+    const newId = `tab-${Date.now()}`;
+    const newTab: ApiTab = {
+      id: newId,
+      title: customTitle || `요청 ${tabs.length + 1}`,
+      request: customReq ? { ...customReq } : createDefaultRequest(),
+      response: null,
+      activeCollection: collection !== undefined ? collection : (activeTab ? activeTab.activeCollection : null),
+    };
+    const newTabs = [...tabs, newTab];
+    setTabs(newTabs);
+    setActiveTabId(newId);
+    saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: newTabs, activeTabId: newId });
+  };
+
+  const handleCloseTab = (id: string) => {
+    if (tabs.length <= 1) return;
+    const filtered = tabs.filter((t) => t.id !== id);
+    let newActiveId = activeTabId;
+    if (activeTabId === id) {
+      newActiveId = filtered[filtered.length - 1].id;
+    }
+    setTabs(filtered);
+    setActiveTabId(newActiveId);
+    saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: filtered, activeTabId: newActiveId });
+  };
+
+  const handleRenameTab = (id: string, newTitle: string) => {
+    const updatedTabs = tabs.map((t) => (t.id === id ? { ...t, title: newTitle } : t));
+    setTabs(updatedTabs);
+    saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: updatedTabs, activeTabId });
+  };
 
   // Sync Save Collection folder selection
   useEffect(() => {
@@ -127,11 +189,21 @@ export const App: React.FC = () => {
       if (typeof settings.requestPanelHeight === 'number') {
         setRequestPanelHeight(settings.requestPanelHeight);
       }
+      if (Array.isArray(settings.tabs) && settings.tabs.length > 0) {
+        setTabs(settings.tabs);
+        if (settings.activeTabId && settings.tabs.some((t) => t.id === settings.activeTabId)) {
+          setActiveTabId(settings.activeTabId);
+        } else {
+          setActiveTabId(settings.tabs[0].id);
+        }
+      }
     }
   };
 
-  // Listen for Supabase Auth state changes & load user data & layout settings
+  // Listen for Supabase Auth state changes & load user data
   useEffect(() => {
+    loadUserSettingsData();
+
     getCurrentUser().then((usr) => {
       setUser(usr);
       if (usr) {
@@ -142,14 +214,9 @@ export const App: React.FC = () => {
 
     const { data: authListener } = onAuthChange((usr) => {
       setUser(usr);
+      loadUserSettingsData();
       if (usr) {
         loadCollectionsData();
-        loadUserSettingsData();
-      } else {
-        setCollections([]);
-        setActiveCollection(null);
-        setSidebarWidth(320);
-        setRequestPanelHeight(50);
       }
     });
 
@@ -194,9 +261,7 @@ export const App: React.FC = () => {
       window.removeEventListener('mouseup', handleMouseUp);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
-      if (user) {
-        saveUserSettings({ sidebarWidth: finalWidth });
-      }
+      saveUserSettings({ sidebarWidth: finalWidth, requestPanelHeight, tabs, activeTabId });
     };
 
     document.body.style.userSelect = 'none';
@@ -225,9 +290,7 @@ export const App: React.FC = () => {
       window.removeEventListener('mouseup', handleMouseUp);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
-      if (user) {
-        saveUserSettings({ requestPanelHeight: finalPercent });
-      }
+      saveUserSettings({ sidebarWidth, requestPanelHeight: finalPercent, tabs, activeTabId });
     };
 
     document.body.style.userSelect = 'none';
@@ -236,32 +299,30 @@ export const App: React.FC = () => {
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-
   const handleToggleProxy = (val: boolean) => {
     setUseProxy(val);
-    setRequest((prev) => ({ ...prev, useProxy: val }));
+    updateActiveTab({ request: { ...activeTab.request, useProxy: val } });
   };
 
   const handleSend = async () => {
-    if (!request.url.trim()) return;
+    if (!activeTab.request.url.trim()) return;
     setIsLoading(true);
-    setResponse(null);
+    updateActiveTab({ response: null });
 
-    // Merge Collection-level variables and headers if active collection is set
-    const colVars = activeCollection ? activeCollection.variables : [];
-    const colHeaders = activeCollection ? activeCollection.headers : [];
+    const colVars = activeTab.activeCollection ? activeTab.activeCollection.variables : [];
+    const colHeaders = activeTab.activeCollection ? activeTab.activeCollection.headers : [];
 
-    const result = await executeHttpRequest({ ...request, useProxy }, colVars, colHeaders);
-    setResponse(result);
+    const result = await executeHttpRequest({ ...activeTab.request, useProxy }, colVars, colHeaders);
+    updateActiveTab({ response: result });
     setIsLoading(false);
 
     // Save to history
     const saved = await saveHistory({
-      method: request.method,
-      url: request.url,
+      method: activeTab.request.method,
+      url: activeTab.request.url,
       status: result.status,
       timeMs: result.timeMs,
-      body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
+      body: activeTab.request.method !== 'GET' && activeTab.request.method !== 'HEAD' ? activeTab.request.body : undefined,
     });
 
     if (saved) {
@@ -273,12 +334,13 @@ export const App: React.FC = () => {
 
   const handleQuickPreset = (method: HttpMethod, url: string, body?: string) => {
     const newReq: RequestState = {
-      ...request,
+      ...activeTab.request,
       method,
       url,
-      body: body || request.body,
+      body: body || activeTab.request.body,
     };
-    setRequest(newReq);
+    const pathPart = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+    updateActiveTab({ request: newReq, title: `${method} ${pathPart || url}` });
   };
 
   const handleSelectHistory = (item: HistoryItem) => {
@@ -291,16 +353,43 @@ export const App: React.FC = () => {
         enabled: true,
       }));
     } else {
-      params = request.params || [];
+      params = activeTab.request.params || [];
     }
 
-    setRequest({
-      ...request,
+    const newReq: RequestState = {
+      ...activeTab.request,
       method: (item.method as HttpMethod) || 'GET',
       url: item.url,
-      params: params.length > 0 ? params : request.params,
-      body: item.body || request.body,
-    });
+      params: params.length > 0 ? params : activeTab.request.params,
+      body: item.body || activeTab.request.body,
+    };
+
+    const pathPart = item.url.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+    const title = `${item.method} ${pathPart || item.url}`;
+
+    // 1. Check if a sheet for this history item is already open in current tabs
+    const existingTab = tabs.find(
+      (t) => t.request.method === item.method && t.request.url === item.url
+    );
+
+    if (existingTab) {
+      // Switch focus to existing tab
+      setActiveTabId(existingTab.id);
+      return;
+    }
+
+    // 2. Otherwise open in new tab (or reuse untouched initial default tab)
+    const isUntouchedDefaultTab =
+      tabs.length === 1 &&
+      !activeTab.response &&
+      activeTab.request.url === createDefaultRequest().url &&
+      (activeTab.title === '요청 1' || activeTab.title.startsWith('GET /api/echo'));
+
+    if (isUntouchedDefaultTab) {
+      updateActiveTab({ request: newReq, title });
+    } else {
+      handleCreateTab(newReq, title, activeTab.activeCollection);
+    }
   };
 
   const handleClearHistory = async () => {
@@ -313,7 +402,6 @@ export const App: React.FC = () => {
     setHistory((prev) => prev.filter((h) => h.id !== id));
   };
 
-  // Auth Submit Handler
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthErrorMsg('');
@@ -323,6 +411,7 @@ export const App: React.FC = () => {
     }
 
     setAuthLoading(true);
+    DLoading(authMode === 'signin' ? '로그인 처리 중...' : '회원가입 처리 중...');
     try {
       if (authMode === 'signin') {
         await signInWithEmail(authEmail, authPassword);
@@ -330,6 +419,8 @@ export const App: React.FC = () => {
         setAuthEmail('');
         setAuthPassword('');
         loadCollectionsData();
+        loadUserSettingsData();
+        DLoading.dismiss('로그인되었습니다!');
       } else {
         await signUpWithEmail(authEmail, authPassword);
         try {
@@ -338,40 +429,34 @@ export const App: React.FC = () => {
           setAuthEmail('');
           setAuthPassword('');
           loadCollectionsData();
+          loadUserSettingsData();
+          DLoading.dismiss('회원가입 및 로그인되었습니다!');
         } catch {
           alert('회원가입이 완료되었습니다! 로그인해 주세요.');
           setAuthMode('signin');
+          DLoading.dismiss('회원가입이 완료되었습니다!');
         }
       }
     } catch (err: any) {
-      let msg = err.message || '인증 처리에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.';
-      if (msg.includes('Email not confirmed')) {
-        msg = '이메일 인증이 필요합니다. Supabase Authentication 설정에서 [Confirm email]을 OFF로 꺼주세요.';
-      } else if (msg.includes('Invalid login credentials')) {
-        msg = '이메일 또는 비밀번호가 올바르지 않습니다. (계정이 존재하지 않거나 비밀번호 오류)';
-      } else if (msg.includes('User already registered')) {
-        msg = '이미 가입되어 있는 이메일 주소입니다.';
-      } else if (msg.toLowerCase().includes('rate limit')) {
-        msg = '이메일 발송 제한(Rate Limit)을 초과했습니다. Supabase 대시보드 (Authentication -> Providers -> Email)에서 [Confirm email]을 OFF로 끄시거나 5~10분 후 다시 시도해 주세요.';
-      } else if (msg.toLowerCase().includes('signups are disabled')) {
-        msg = '이메일 회원가입 기능이 꺼져있습니다. Supabase 대시보드 (Authentication -> Providers -> Email)에서 [Allow new users to sign up] 또는 [Enable Email provider] 스위치를 ON(켜짐)으로 켜주세요.';
-      }
+      let msg = err.message || '인증 처리에 실패했습니다.';
       setAuthErrorMsg(msg);
+      DLoading.dismiss(msg);
     } finally {
       setAuthLoading(false);
     }
   };
 
-  // Save Collection Submit Handler
   const handleSaveCollectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!saveRequestName.trim()) return;
 
     setSaveLoading(true);
+    DLoading('컬렉션에 데이터 저장 중...');
     try {
       if (saveFolderId === 'new') {
         if (!saveNewFolderName.trim()) {
           alert('새 컬렉션 폴더 이름을 입력해 주세요.');
+          DLoading.dismiss('새 컬렉션 폴더 이름을 입력해 주세요.');
           setSaveLoading(false);
           return;
         }
@@ -382,7 +467,9 @@ export const App: React.FC = () => {
       setSaveRequestName('');
       setSaveNewFolderName('');
       setIsSaveCollectionModalOpen(false);
+      DLoading.dismiss('컬렉션에 성공적으로 저장되었습니다!');
     } catch (e) {
+      DLoading.dismiss('컬렉션 저장에 실패했습니다.');
       alert('컬렉션 저장에 실패했습니다.');
     } finally {
       setSaveLoading(false);
@@ -402,11 +489,11 @@ export const App: React.FC = () => {
     const savedItem = await saveCollectionRequestItem({
       collectionId,
       name: requestName,
-      method: request.method,
-      url: request.url,
-      params: request.params,
-      headers: request.headers,
-      body: request.body,
+      method: activeTab.request.method,
+      url: activeTab.request.url,
+      params: activeTab.request.params,
+      headers: activeTab.request.headers,
+      body: activeTab.request.body,
     });
 
     if (savedItem) {
@@ -433,11 +520,11 @@ export const App: React.FC = () => {
     const savedItem = await saveCollectionRequestItem({
       collectionId: newFolder.id,
       name: requestName,
-      method: request.method,
-      url: request.url,
-      params: request.params,
-      headers: request.headers,
-      body: request.body,
+      method: activeTab.request.method,
+      url: activeTab.request.url,
+      params: activeTab.request.params,
+      headers: activeTab.request.headers,
+      body: activeTab.request.body,
     });
 
     if (savedItem) {
@@ -449,23 +536,52 @@ export const App: React.FC = () => {
   };
 
   const handleSelectCollectionItem = (item: CollectionRequestItem, collection: CollectionGroup) => {
-    setActiveCollection(collection);
-    setRequest({
-      ...request,
+    const newReq: RequestState = {
+      ...activeTab.request,
       method: item.method || 'GET',
       url: item.url,
-      params: Array.isArray(item.params) ? item.params : request.params,
-      headers: Array.isArray(item.headers) ? item.headers : request.headers,
+      params: Array.isArray(item.params) ? item.params : activeTab.request.params,
+      headers: Array.isArray(item.headers) ? item.headers : activeTab.request.headers,
       body: item.body || '',
-    });
+    };
+
+    // 1. Check if a sheet for this collection request item is already open in current tabs
+    const existingTab = tabs.find(
+      (t) =>
+        (t.activeCollection?.id === collection.id && t.title === `${item.method} ${item.name}`) ||
+        (t.request.method === item.method && t.request.url === item.url)
+    );
+
+    if (existingTab) {
+      // Switch focus to existing tab
+      setActiveTabId(existingTab.id);
+      return;
+    }
+
+    // 2. Otherwise open in new tab (or reuse untouched initial default tab)
+    const isUntouchedDefaultTab =
+      tabs.length === 1 &&
+      !activeTab.response &&
+      activeTab.request.url === createDefaultRequest().url &&
+      (activeTab.title === '요청 1' || activeTab.title.startsWith('GET /api/echo'));
+
+    if (isUntouchedDefaultTab) {
+      updateActiveTab({
+        request: newReq,
+        title: `${item.method} ${item.name}`,
+        activeCollection: collection,
+      });
+    } else {
+      handleCreateTab(newReq, `${item.method} ${item.name}`, collection);
+    }
   };
 
   const handleDeleteCollectionGroup = async (id: string) => {
     await deleteCollectionGroupApi(id);
     setCollections((prev) => prev.filter((c) => c.id !== id));
-    if (activeCollection?.id === id) {
-      setActiveCollection(null);
-    }
+    setTabs((prev) =>
+      prev.map((t) => (t.activeCollection?.id === id ? { ...t, activeCollection: null } : t))
+    );
   };
 
   const handleDeleteCollectionItem = async (id: string) => {
@@ -480,6 +596,7 @@ export const App: React.FC = () => {
 
   const handleSaveCollectionConfigConfirm = async () => {
     if (!configCollectionModalTarget) return;
+    DLoading('컬렉션 공통 설정 저장 중...');
     await updateCollectionGroupConfig(
       configCollectionModalTarget.id,
       configVariables,
@@ -490,24 +607,28 @@ export const App: React.FC = () => {
         col.id === configCollectionModalTarget.id ? { ...col, variables: configVariables, headers: configHeaders } : col
       )
     );
-    if (activeCollection?.id === configCollectionModalTarget.id) {
-      setActiveCollection((prev) => (prev ? { ...prev, variables: configVariables, headers: configHeaders } : null));
-    }
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.activeCollection?.id === configCollectionModalTarget.id
+          ? { ...t, activeCollection: { ...t.activeCollection!, variables: configVariables, headers: configHeaders } }
+          : t
+      )
+    );
     setConfigCollectionModalTarget(null);
+    DLoading.dismiss('컬렉션 설정이 저장되었습니다!');
   };
 
   const handleCreateFolderDirectly = async () => {
-    if (!user) {
-      alert('로그인이 필요합니다.');
-      setIsAuthModalOpen(true);
-      return;
-    }
     const name = prompt('새 컬렉션 폴더 이름을 입력하세요 (예: 쇼핑몰 API 프로젝트):');
     if (!name || !name.trim()) return;
 
+    DLoading('새 컬렉션 폴더 생성 중...');
     const newFolder = await createCollectionGroup({ name: name.trim() });
     if (newFolder) {
       setCollections((prev) => [newFolder, ...prev]);
+      DLoading.dismiss('컬렉션 폴더가 생성되었습니다!');
+    } else {
+      DLoading.dismiss('폴더 생성이 취소되었습니다.');
     }
   };
 
@@ -515,9 +636,9 @@ export const App: React.FC = () => {
     await signOutUser();
     setUser(null);
     setCollections([]);
-    setActiveCollection(null);
+    setTabs([createInitialTab('tab-1', '요청 1')]);
+    setActiveTabId('tab-1');
   };
-
 
   return (
     <div className="app-container">
@@ -529,6 +650,7 @@ export const App: React.FC = () => {
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onSignOut={handleSignOut}
       />
+
       <div className="main-layout">
         <Sidebar
           width={sidebarWidth}
@@ -546,18 +668,27 @@ export const App: React.FC = () => {
           onCreateFolderClick={handleCreateFolderDirectly}
         />
 
-        {/* Vertical Resizer between Sidebar and Main Content */}
+        {/* Vertical Resizer between Sidebar and Main Frame */}
         <div
           className={`resizer-vertical ${isDraggingSidebar ? 'active' : ''}`}
           onMouseDown={handleSidebarMouseDown}
           title="드래그하여 사이드바 너비 조절"
         />
 
+        {/* Main Body Frame Container */}
         <main
           ref={mainContainerRef}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            overflow: 'hidden',
+            background: 'var(--bg-primary)'
+          }}
         >
-          {activeCollection && (
+          {/* Active Collection Inheritance Status Bar */}
+          {activeTab.activeCollection && (
             <div style={{
               background: 'rgba(99, 102, 241, 0.1)',
               borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
@@ -566,13 +697,14 @@ export const App: React.FC = () => {
               color: '#818cf8',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between'
+              justifyContent: 'space-between',
+              flexShrink: 0
             }}>
               <span>
-                📁 활성화된 컬렉션 폴더: <strong>{activeCollection.name}</strong> (공통 변수 {activeCollection.variables.length}개, 공통 헤더 {activeCollection.headers.length}개 상속 중)
+                📁 활성화된 컬렉션 폴더: <strong>{activeTab.activeCollection.name}</strong> (공통 변수 {activeTab.activeCollection.variables.length}개, 공통 헤더 {activeTab.activeCollection.headers.length}개 상속 중)
               </span>
               <button
-                onClick={() => setActiveCollection(null)}
+                onClick={() => updateActiveTab({ activeCollection: null })}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer', fontSize: '0.75rem' }}
               >
                 상속 해제
@@ -580,27 +712,39 @@ export const App: React.FC = () => {
             </div>
           )}
 
+          {/* Top Panel: Request Panel */}
           <RequestPanel
             height={requestPanelHeight}
-            request={request}
-            onChange={setRequest}
+            request={activeTab.request}
+            onChange={handleRequestChange}
             onSend={handleSend}
             isLoading={isLoading}
             onOpenSaveCollection={handleOpenSaveCollection}
           />
 
-          {/* Horizontal Resizer between RequestPanel and ResponsePanel */}
+          {/* Horizontal Resizer between Request Panel and Response Panel */}
           <div
             className={`resizer-horizontal ${isDraggingBody ? 'active' : ''}`}
             onMouseDown={handleBodyMouseDown}
             title="드래그하여 요청/응답 패널 높이 조절"
           />
 
-          <ResponsePanel response={response} isLoading={isLoading} />
+          {/* Middle Panel: Response Panel */}
+          <ResponsePanel response={activeTab.response} isLoading={isLoading} />
+
+          {/* Bottom Panel Frame: Excel Spreadsheet Sheet Tab Bar */}
+          <SpreadsheetTabBar
+            tabs={tabs}
+            activeTabId={activeTab.id}
+            onSelectTab={setActiveTabId}
+            onCreateTab={() => handleCreateTab()}
+            onCloseTab={handleCloseTab}
+            onRenameTab={handleRenameTab}
+          />
         </main>
       </div>
 
-      {/* 1. Auth Modal - Direct Modal Component Usage */}
+      {/* 1. Auth Modal */}
       <Modal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
@@ -710,7 +854,7 @@ export const App: React.FC = () => {
         }
       />
 
-      {/* 2. Save Collection Modal - Direct Modal Component Usage */}
+      {/* 2. Save Collection Modal */}
       <Modal
         isOpen={isSaveCollectionModalOpen}
         onClose={() => setIsSaveCollectionModalOpen(false)}
@@ -729,9 +873,9 @@ export const App: React.FC = () => {
               gap: '10px',
               fontSize: '0.8rem'
             }}>
-              <MethodBadge method={request.method} />
+              <MethodBadge method={activeTab.request.method} />
               <span style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {request.url}
+                {activeTab.request.url}
               </span>
             </div>
 
@@ -852,7 +996,7 @@ export const App: React.FC = () => {
         }
       />
 
-      {/* 3. Collection Config Modal - Direct Modal Component Usage */}
+      {/* 3. Collection Config Modal */}
       <Modal
         isOpen={!!configCollectionModalTarget}
         onClose={() => setConfigCollectionModalTarget(null)}
@@ -866,7 +1010,7 @@ export const App: React.FC = () => {
               onClick={() => setConfigActiveTab('variables')}
               icon={<Braces size={14} />}
               label="공통 변수 (Variables)"
-              badge={configVariables.filter(v => v.enabled && v.key).length}
+              badge={configVariables.filter((v) => v.enabled && v.key).length}
               style={{ flex: 1, padding: '10px', justifyContent: 'center', borderRadius: 0 }}
             />
             <TabButton
@@ -874,7 +1018,7 @@ export const App: React.FC = () => {
               onClick={() => setConfigActiveTab('headers')}
               icon={<Layers size={14} />}
               label="공통 헤더 (Headers / Auth)"
-              badge={configHeaders.filter(h => h.enabled && h.key).length}
+              badge={configHeaders.filter((h) => h.enabled && h.key).length}
               style={{ flex: 1, padding: '10px', justifyContent: 'center', borderRadius: 0 }}
             />
           </div>
@@ -926,4 +1070,3 @@ export const App: React.FC = () => {
     </div>
   );
 };
-

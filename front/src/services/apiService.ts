@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { RequestState, ResponseResult, HistoryItem, KeyValueItem } from '../types';
+import { RequestState, ResponseResult, HistoryItem, KeyValueItem, ApiTab } from '../types';
 import { supabase } from './supabaseClient';
 
 const BACKEND_BASE_URL = 'http://localhost:3002';
@@ -29,7 +29,21 @@ export const executeHttpRequest = async (
     varsMap[v.key.trim()] = v.value;
   });
 
-  const finalUrl = interpolateVariables(req.url, varsMap);
+  // Default fallback for {{baseUrl}} if missing or empty
+  if (!('baseUrl' in varsMap) || !varsMap['baseUrl']) {
+    varsMap['baseUrl'] = BACKEND_BASE_URL;
+  }
+
+  let finalUrl = interpolateVariables(req.url, varsMap);
+  // Clean up any remaining unhandled {{var}} templates
+  finalUrl = finalUrl.replace(/\{\{\s*[\w.-]+\s*\}\}/g, '');
+
+  // Add missing scheme/host if needed
+  if (finalUrl.startsWith('/')) {
+    finalUrl = `${BACKEND_BASE_URL}${finalUrl}`;
+  } else if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+    finalUrl = `http://${finalUrl}`;
+  }
 
   const activeParams: Record<string, string> = {};
   req.params.filter(p => p.enabled && p.key && p.key.trim()).forEach(p => {
@@ -66,7 +80,83 @@ export const executeHttpRequest = async (
     }
   }
 
-  // Send via NestJS Backend Proxy (bypasses CORS)
+  const isEchoEndpoint = finalUrl.includes('/api/echo');
+  const startTime = Date.now();
+
+  // Helper: Client-side Built-in Echo Engine Fallback
+  const getMockEchoResponse = (): ResponseResult => {
+    const timeMs = Date.now() - startTime;
+    const mockPayload = {
+      message: `${req.method} Echo response from RestFlow Engine`,
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      url: finalUrl,
+      query: activeParams,
+      headers: activeHeaders,
+      receivedData: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
+      mockData: [
+        { id: 1, name: 'RestFlow Pro', type: 'HTTP Client', status: 'Active' },
+        { id: 2, name: 'Echo Engine', type: 'Built-in Mock', status: 'Running' }
+      ]
+    };
+    const rawStr = JSON.stringify(mockPayload);
+    return {
+      status: 200,
+      statusText: 'OK (Mock)',
+      headers: { 'content-type': 'application/json' },
+      data: mockPayload,
+      timeMs,
+      sizeBytes: new Blob([rawStr]).size,
+      isError: false,
+    };
+  };
+
+  // Helper for Direct Execution
+  const executeDirect = async (): Promise<ResponseResult> => {
+    try {
+      const res = await axios({
+        method: req.method,
+        url: finalUrl,
+        params: activeParams,
+        headers: activeHeaders,
+        data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
+        validateStatus: () => true,
+        timeout: 10000,
+      });
+      const endTime = Date.now();
+      const rawStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data || {});
+
+      return {
+        status: res.status,
+        statusText: res.statusText || 'OK',
+        headers: res.headers as Record<string, string>,
+        data: res.data,
+        timeMs: endTime - startTime,
+        sizeBytes: new Blob([rawStr]).size,
+        isError: res.status >= 400,
+      };
+    } catch (err: any) {
+      if (isEchoEndpoint) {
+        return getMockEchoResponse();
+      }
+      const endTime = Date.now();
+      return {
+        status: 0,
+        statusText: '네트워크 / CORS 오류',
+        headers: {},
+        data: {
+          error: err.message || 'CORS 제약 또는 네트워크 연결 실패.',
+          message: '대상 URL에 접근할 수 없거나 CORS 제약으로 인해 응답을 수신하지 못했습니다.',
+          tip: "상단의 'NestJS 프록시 서버' 토글을 켜서 CORS 및 네트워크 제약을 우회해보세요!",
+        },
+        timeMs: endTime - startTime,
+        sizeBytes: 0,
+        isError: true,
+      };
+    }
+  };
+
+  // 1. Send via NestJS Backend Proxy (if useProxy enabled)
   if (req.useProxy) {
     try {
       const res = await axios.post(`${BACKEND_BASE_URL}/api/proxy`, {
@@ -75,7 +165,7 @@ export const executeHttpRequest = async (
         params: activeParams,
         headers: activeHeaders,
         data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
-      });
+      }, { timeout: 10000 });
 
       return {
         status: res.data.status,
@@ -87,56 +177,42 @@ export const executeHttpRequest = async (
         isError: res.data.status >= 400,
       };
     } catch (err: any) {
+      // If Proxy fails, try Direct Request or Mock fallback!
+      if (isEchoEndpoint) {
+        try {
+          return await executeDirect();
+        } catch {
+          return getMockEchoResponse();
+        }
+      }
+
+      try {
+        const directRes = await executeDirect();
+        if (!directRes.isError || directRes.status > 0) {
+          return directRes;
+        }
+      } catch (e) {
+        // Ignore fallback error
+      }
+
       return {
         status: err.response?.status || 500,
         statusText: '프록시 요청 실패',
         headers: {},
-        data: err.response?.data || { error: err.message || 'NestJS 프록시 서버 연결에 실패했습니다.' },
-        timeMs: 0,
+        data: err.response?.data || {
+          error: err.message || 'NestJS 프록시 서버 연결 실패',
+          message: 'NestJS 프록시 서버(http://localhost:3002)에 연결하지 못했습니다.',
+          tip: '백엔드 서버가 3002 포트에서 실행 중인지 확인하거나, 상단 프록시 토글을 끄고 직접 브라우저 요청을 시도하세요.',
+        },
+        timeMs: Date.now() - startTime,
         sizeBytes: 0,
         isError: true,
       };
     }
   }
 
-  // Direct Browser Request
-  const startTime = Date.now();
-  try {
-    const res = await axios({
-      method: req.method,
-      url: finalUrl,
-      params: activeParams,
-      headers: activeHeaders,
-      data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
-      validateStatus: () => true,
-    });
-    const endTime = Date.now();
-    const rawStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data || {});
-
-    return {
-      status: res.status,
-      statusText: res.statusText || 'OK',
-      headers: res.headers as Record<string, string>,
-      data: res.data,
-      timeMs: endTime - startTime,
-      sizeBytes: new Blob([rawStr]).size,
-      isError: res.status >= 400,
-    };
-  } catch (err: any) {
-    const endTime = Date.now();
-    return {
-      status: 0,
-      statusText: '네트워크 / CORS 오류',
-      headers: {},
-      data: {
-        error: err.message || 'CORS 제약 또는 네트워크 연결 실패.',
-        tip: "상단의 'NestJS 프록시 서버' 토글을 켜서 CORS 제약을 우회해보세요!",
-      },
-      timeMs: endTime - startTime,
-      sizeBytes: 0,
-      isError: true,
-    };
-  }
+  // 2. Direct Browser Request
+  return await executeDirect();
 };
 
 // -------------------------------------------------------------
@@ -321,59 +397,84 @@ export const deleteHistoryItemApi = async (id: string): Promise<boolean> => {
 };
 
 // -------------------------------------------------------------
-// 4. Supabase Collections Helpers (Folders & Requests)
 // -------------------------------------------------------------
+// 4. Supabase & Local Collections Helpers (Folders & Requests)
+// -------------------------------------------------------------
+const LOCAL_COLLECTIONS_KEY = 'restflow_local_collections';
+
+export const getStoredLocalCollections = (): any[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_COLLECTIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveStoredLocalCollections = (collections: any[]) => {
+  try {
+    localStorage.setItem(LOCAL_COLLECTIONS_KEY, JSON.stringify(collections || []));
+  } catch (e) {
+    // Ignore storage error
+  }
+};
+
 export const fetchCollections = async (): Promise<any[]> => {
+  const localList = getStoredLocalCollections();
+  let dbList: any[] = [];
+
   try {
     const { data: collectionsData, error: collectionsError } = await supabase
       .from('collections')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (collectionsError || !collectionsData) {
-      return [];
+    if (!collectionsError && collectionsData) {
+      let itemsData: any[] = [];
+      try {
+        const { data: cItems } = await supabase
+          .from('collection_items')
+          .select('*')
+          .order('created_at', { ascending: true });
+        itemsData = cItems || [];
+      } catch {
+        itemsData = [];
+      }
+
+      dbList = collectionsData.map((col: any) => {
+        const colItems = itemsData
+          .filter((item: any) => item.collection_id === col.id)
+          .map((item: any) => ({
+            id: item.id,
+            collectionId: item.collection_id,
+            name: item.name,
+            method: item.method,
+            url: item.url,
+            params: item.params || [],
+            headers: item.headers || [],
+            body: item.body || '',
+            timestamp: item.created_at,
+          }));
+
+        return {
+          id: col.id,
+          name: col.name,
+          description: col.description || '',
+          variables: col.variables || [],
+          headers: col.headers || [],
+          items: colItems,
+          timestamp: col.created_at,
+        };
+      });
     }
-
-    // Try fetching child items
-    let itemsData: any[] = [];
-    try {
-      const { data: cItems } = await supabase
-        .from('collection_items')
-        .select('*')
-        .order('created_at', { ascending: true });
-      itemsData = cItems || [];
-    } catch {
-      itemsData = [];
-    }
-
-    return collectionsData.map((col: any) => {
-      const colItems = itemsData
-        .filter((item: any) => item.collection_id === col.id)
-        .map((item: any) => ({
-          id: item.id,
-          collectionId: item.collection_id,
-          name: item.name,
-          method: item.method,
-          url: item.url,
-          params: item.params || [],
-          headers: item.headers || [],
-          body: item.body || '',
-          timestamp: item.created_at,
-        }));
-
-      return {
-        id: col.id,
-        name: col.name,
-        description: col.description || '',
-        variables: col.variables || [],
-        headers: col.headers || [],
-        items: colItems,
-        timestamp: col.created_at,
-      };
-    });
   } catch (e) {
-    return [];
+    // Fallback gracefully
   }
+
+  // Merge DB list and Local list (prefer DB version if duplicate id)
+  const dbIds = new Set(dbList.map((c) => c.id));
+  const uniqueLocals = localList.filter((c) => !dbIds.has(c.id));
+  return [...dbList, ...uniqueLocals];
 };
 
 export const createCollectionGroup = async (group: {
@@ -381,42 +482,61 @@ export const createCollectionGroup = async (group: {
   description?: string;
   variables?: any[];
   headers?: any[];
-}): Promise<any | null> => {
+}): Promise<any> => {
+  let createdFolder: any = null;
+
   try {
     const user = (await supabase.auth.getUser()).data.user;
-    if (!user) return null;
+    if (user) {
+      const { data, error } = await supabase
+        .from('collections')
+        .insert([
+          {
+            user_id: user.id,
+            name: group.name,
+            description: group.description || null,
+            variables: group.variables || [],
+            headers: group.headers || [],
+          },
+        ])
+        .select()
+        .single();
 
-    const { data, error } = await supabase
-      .from('collections')
-      .insert([
-        {
-          user_id: user.id,
-          name: group.name,
-          description: group.description || null,
-          variables: group.variables || [],
-          headers: group.headers || [],
-        },
-      ])
-      .select()
-      .single();
-
-    if (error || !data) {
-      console.error('Error creating collection folder:', error);
-      return null;
+      if (error) {
+        console.error('Supabase DB folder creation error:', error.message || error);
+      } else if (data) {
+        createdFolder = {
+          id: data.id,
+          name: data.name,
+          description: data.description || '',
+          variables: data.variables || [],
+          headers: data.headers || [],
+          items: [],
+          timestamp: data.created_at,
+        };
+      }
     }
-
-    return {
-      id: data.id,
-      name: data.name,
-      description: data.description || '',
-      variables: data.variables || [],
-      headers: data.headers || [],
-      items: [],
-      timestamp: data.created_at,
-    };
   } catch (e) {
-    return null;
+    console.error('Supabase folder creation exception:', e);
   }
+
+  if (!createdFolder) {
+    createdFolder = {
+      id: `col-local-${Date.now()}`,
+      name: group.name,
+      description: group.description || '',
+      variables: group.variables || [],
+      headers: group.headers || [],
+      items: [],
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  // Always sync to localStorage
+  const currentLocals = getStoredLocalCollections();
+  saveStoredLocalCollections([createdFolder, ...currentLocals]);
+
+  return createdFolder;
 };
 
 export const updateCollectionGroupConfig = async (
@@ -430,6 +550,13 @@ export const updateCollectionGroupConfig = async (
       .update({ variables, headers })
       .eq('id', collectionId);
 
+    // Also update local storage if present
+    const locals = getStoredLocalCollections();
+    const updatedLocals = locals.map((c) =>
+      c.id === collectionId ? { ...c, variables, headers } : c
+    );
+    saveStoredLocalCollections(updatedLocals);
+
     return !error;
   } catch (e) {
     return false;
@@ -438,14 +565,12 @@ export const updateCollectionGroupConfig = async (
 
 export const deleteCollectionGroupApi = async (id: string): Promise<boolean> => {
   try {
-    const { error } = await supabase
-      .from('collections')
-      .delete()
-      .eq('id', id);
-    return !error;
-  } catch (e) {
-    return false;
-  }
+    await supabase.from('collections').delete().eq('id', id);
+  } catch (e) {}
+
+  const locals = getStoredLocalCollections();
+  saveStoredLocalCollections(locals.filter((c) => c.id !== id));
+  return true;
 };
 
 export const saveCollectionRequestItem = async (item: {
@@ -456,96 +581,157 @@ export const saveCollectionRequestItem = async (item: {
   params?: any[];
   headers?: any[];
   body?: string;
-}): Promise<any | null> => {
+}): Promise<any> => {
+  let savedItem: any = null;
+
   try {
-    const { data, error } = await supabase
-      .from('collection_items')
-      .insert([
-        {
-          collection_id: item.collectionId,
-          name: item.name,
-          method: item.method,
-          url: item.url,
-          params: item.params || [],
-          headers: item.headers || [],
-          body: item.body || null,
-        },
-      ])
-      .select()
-      .single();
+    const user = (await supabase.auth.getUser()).data.user;
+    if (user && !item.collectionId.startsWith('col-local-')) {
+      const { data, error } = await supabase
+        .from('collection_items')
+        .insert([
+          {
+            collection_id: item.collectionId,
+            name: item.name,
+            method: item.method,
+            url: item.url,
+            params: item.params || [],
+            headers: item.headers || [],
+            body: item.body || null,
+          },
+        ])
+        .select()
+        .single();
 
-    if (error || !data) {
-      console.error('Error saving collection request item:', error);
-      return null;
+      if (!error && data) {
+        savedItem = {
+          id: data.id,
+          collectionId: data.collection_id,
+          name: data.name,
+          method: data.method,
+          url: data.url,
+          params: data.params || [],
+          headers: data.headers || [],
+          body: data.body || '',
+          timestamp: data.created_at,
+        };
+      }
     }
-
-    return {
-      id: data.id,
-      collectionId: data.collection_id,
-      name: data.name,
-      method: data.method,
-      url: data.url,
-      params: data.params || [],
-      headers: data.headers || [],
-      body: data.body || '',
-      timestamp: data.created_at,
-    };
   } catch (e) {
-    return null;
+    // Ignore
   }
+
+  if (!savedItem) {
+    savedItem = {
+      id: `item-local-${Date.now()}`,
+      collectionId: item.collectionId,
+      name: item.name,
+      method: item.method,
+      url: item.url,
+      params: item.params || [],
+      headers: item.headers || [],
+      body: item.body || '',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  // Also update local storage
+  const locals = getStoredLocalCollections();
+  const updatedLocals = locals.map((col) => {
+    if (col.id === item.collectionId) {
+      return { ...col, items: [...(col.items || []), savedItem] };
+    }
+    return col;
+  });
+  saveStoredLocalCollections(updatedLocals);
+
+  return savedItem;
 };
 
 export const deleteCollectionRequestItemApi = async (id: string): Promise<boolean> => {
   try {
-    const { error } = await supabase
-      .from('collection_items')
-      .delete()
-      .eq('id', id);
-    return !error;
-  } catch (e) {
-    return false;
-  }
+    await supabase.from('collection_items').delete().eq('id', id);
+  } catch (e) {}
+
+  const locals = getStoredLocalCollections();
+  const updatedLocals = locals.map((col) => ({
+    ...col,
+    items: (col.items || []).filter((item: any) => item.id !== id),
+  }));
+  saveStoredLocalCollections(updatedLocals);
+  return true;
 };
 
 // -------------------------------------------------------------
-// 5. User Layout Settings (DB / Auth Metadata Sync)
+// 5. User Layout Settings (DB & localStorage Sync)
 // -------------------------------------------------------------
+const LOCAL_SETTINGS_KEY = 'restflow_user_layout_settings';
+
 export interface UserLayoutSettings {
   sidebarWidth?: number;
   requestPanelHeight?: number;
+  tabs?: ApiTab[];
+  activeTabId?: string;
 }
 
-export const fetchUserSettings = async (): Promise<UserLayoutSettings | null> => {
+export const getStoredLocalSettings = (): UserLayoutSettings | null => {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-
-    // 1. Try Supabase Auth user_metadata
-    if (user.user_metadata?.layoutSettings) {
-      return user.user_metadata.layoutSettings;
-    }
-
-    // 2. Fallback to public.profiles table settings column if present
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('settings')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.settings?.layoutSettings) {
-      return profile.settings.layoutSettings;
-    }
-
-    return null;
-  } catch (e) {
+    const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
     return null;
   }
 };
 
-export const saveUserSettings = async (settings: UserLayoutSettings): Promise<boolean> => {
+export const saveStoredLocalSettings = (settings: UserLayoutSettings) => {
+  try {
+    const current = getStoredLocalSettings() || {};
+    localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify({ ...current, ...settings }));
+  } catch (e) {
+    // Ignore storage errors
+  }
+};
+
+export const fetchUserSettings = async (): Promise<UserLayoutSettings | null> => {
+  const localSettings = getStoredLocalSettings() || {};
+  let dbSettings: UserLayoutSettings | null = null;
+
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    if (user) {
+      if (user.user_metadata?.layoutSettings) {
+        dbSettings = user.user_metadata.layoutSettings;
+      } else {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('settings')
+          .eq('id', user.id)
+          .single();
+
+        if (profile?.settings?.layoutSettings) {
+          dbSettings = profile.settings.layoutSettings;
+        }
+      }
+    }
+  } catch (e) {
+    // Fallback gracefully
+  }
+
+  return {
+    ...localSettings,
+    ...(dbSettings || {}),
+  };
+};
+
+export const saveUserSettings = async (settings: UserLayoutSettings): Promise<boolean> => {
+  // 1. Save synchronously to localStorage IMMEDIATELY (0ms delay)
+  saveStoredLocalSettings(settings);
+
+  try {
+    // 2. Read session synchronously from memory (no HTTP network request delay)
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user) return true;
 
     const currentMetadata = user.user_metadata || {};
     const updatedLayoutSettings = {
@@ -553,16 +739,15 @@ export const saveUserSettings = async (settings: UserLayoutSettings): Promise<bo
       ...settings,
     };
 
-    // Update in Supabase Auth user_metadata
-    await supabase.auth.updateUser({
+    // 3. Parallel DB update (Auth metadata + public.profiles table)
+    const metadataPromise = supabase.auth.updateUser({
       data: {
         ...currentMetadata,
         layoutSettings: updatedLayoutSettings,
       },
     });
 
-    // Also update in public.profiles table settings column
-    await supabase
+    const dbPromise = supabase
       .from('profiles')
       .upsert({
         id: user.id,
@@ -570,9 +755,10 @@ export const saveUserSettings = async (settings: UserLayoutSettings): Promise<bo
         settings: { layoutSettings: updatedLayoutSettings },
       });
 
+    await Promise.allSettled([metadataPromise, dbPromise]);
     return true;
   } catch (e) {
-    console.error('Error saving user layout settings:', e);
+    console.error('Error saving user layout settings to DB:', e);
     return false;
   }
 };

@@ -61,3 +61,12 @@ export interface CollectionGroup {
   items: CollectionRequestItem[];
   timestamp: string;
 }
+
+export interface ApiTab {
+  id: string;
+  title: string;
+  request: RequestState;
+  response: ResponseResult | null;
+  activeCollection: CollectionGroup | null;
+}
+

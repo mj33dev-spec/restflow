@@ -73,16 +73,23 @@ ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.history ENABLE ROW LEVEL SECURITY;
 
--- RLS 정책: 기존 정책 안전 제거 후 재등록 (중복 에러 방지)
+-- RLS 정책: 기존 정책 안전 제거 후 재등록 (중복 에러 방지 및 INSERT / UPDATE / DELETE 허용)
 DROP POLICY IF EXISTS "Public Profiles Access" ON public.profiles;
-CREATE POLICY "Public Profiles Access" ON public.profiles FOR ALL USING (true);
+CREATE POLICY "Public Profiles Access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public Collections Access" ON public.collections;
-CREATE POLICY "Public Collections Access" ON public.collections FOR ALL USING (true);
+CREATE POLICY "Public Collections Access" ON public.collections FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public Collection Items Access" ON public.collection_items;
-CREATE POLICY "Public Collection Items Access" ON public.collection_items FOR ALL USING (true);
+CREATE POLICY "Public Collection Items Access" ON public.collection_items FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public History Access" ON public.history;
-CREATE POLICY "Public History Access" ON public.history FOR ALL USING (true);
+CREATE POLICY "Public History Access" ON public.history FOR ALL USING (true) WITH CHECK (true);
+
+-- 테이블 및 시퀀스 전체 권한 부여
+GRANT ALL ON TABLE public.profiles TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.collections TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.collection_items TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.history TO anon, authenticated, service_role;
+
 

@@ -82,7 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           active={activeTab === 'collections'}
           onClick={() => setActiveTab('collections')}
           icon={<Bookmark size={16} />}
-          label={`컬렉션 (${user ? collectionList.length : '🔒'})`}
+          label={`컬렉션 (${collectionList.length})`}
           style={{
             flex: 1,
             padding: '14px',
@@ -214,213 +214,215 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Collections Folder Tree View */}
       {activeTab === 'collections' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {!user ? (
-            <EmptyState
-              icon={<Bookmark size={36} />}
-              title="로그인 필요"
-              description="컬렉션 폴더를 생성하고 API 요청 그룹을 저장하려면 로그인이 필요합니다."
-              action={
-                <button
-                  className="btn-primary"
-                  onClick={onOpenAuthModal}
-                  style={{ fontSize: '0.8rem', height: '36px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <LogIn size={14} /> 로그인하기
-                </button>
-              }
-            />
-          ) : (
-            <>
-              <div style={{
-                padding: '10px 14px',
+          {!user && (
+            <div style={{
+              padding: '8px 12px',
+              background: 'rgba(99, 102, 241, 0.1)',
+              borderBottom: '1px solid var(--border-color)',
+              color: '#818cf8',
+              fontSize: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span>💡 로그인 시 DB에 영구 보존됩니다</span>
+              <button
+                onClick={onOpenAuthModal}
+                style={{ background: 'transparent', border: 'none', color: '#818cf8', cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }}
+              >
+                로그인
+              </button>
+            </div>
+          )}
+          <div style={{
+            padding: '10px 14px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid var(--border-color)'
+          }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              내 컬렉션 폴더 ({collectionList.length})
+            </span>
+            <button
+              onClick={onCreateFolderClick}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--accent-primary)',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: 'pointer',
                 display: 'flex',
-                justifyContent: 'space-between',
                 alignItems: 'center',
-                borderBottom: '1px solid var(--border-color)'
-              }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  내 컬렉션 폴더 ({collectionList.length})
-                </span>
-                <button
-                  onClick={onCreateFolderClick}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--accent-primary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                  title="새 컬렉션 폴더 생성"
-                >
-                  <Plus size={14} /> 새 폴더
-                </button>
-              </div>
+                gap: '4px'
+              }}
+              title="새 컬렉션 폴더 생성"
+            >
+              <Plus size={14} /> 새 폴더
+            </button>
+          </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-                {collectionList.length === 0 ? (
-                  <EmptyState
-                    icon={<Folder size={36} />}
-                    title="저장된 컬렉션 폴더가 없습니다."
-                    description={
-                      <>
-                        우측 상단 <strong>[+ 새 폴더]</strong> 버튼을 누르시거나 주소창 옆의 <strong>[컬렉션 저장]</strong>을 눌러보세요.
-                      </>
-                    }
-                  />
-                ) : (
-                  collectionList.map((colGroup) => {
-                    const isExpanded = expandedFolders[colGroup.id] !== false; // Default expanded
-                    const items = colGroup.items || [];
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+            {collectionList.length === 0 ? (
+              <EmptyState
+                icon={<Folder size={36} />}
+                title="저장된 컬렉션 폴더가 없습니다."
+                description={
+                  <>
+                    우측 상단 <strong>[+ 새 폴더]</strong> 버튼을 누르시거나 주소창 옆의 <strong>[컬렉션 저장]</strong>을 눌러보세요.
+                  </>
+                }
+              />
+            ) : (
+              collectionList.map((colGroup) => {
+                const isExpanded = expandedFolders[colGroup.id] !== false; // Default expanded
+                const items = colGroup.items || [];
 
-                    return (
-                      <div
-                        key={colGroup.id}
-                        style={{
-                          marginBottom: '8px',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '8px',
-                          overflow: 'hidden',
-                          background: 'rgba(99, 102, 241, 0.03)'
-                        }}
-                      >
-                        {/* Folder Header */}
-                        <div
-                          onClick={() => toggleFolder(colGroup.id)}
-                          style={{
-                            padding: '10px 12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            cursor: 'pointer',
-                            background: 'rgba(255,255,255,0.03)',
-                            borderBottom: isExpanded && items.length > 0 ? '1px solid var(--border-color)' : 'none'
+                return (
+                  <div
+                    key={colGroup.id}
+                    style={{
+                      marginBottom: '8px',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      background: 'rgba(99, 102, 241, 0.03)'
+                    }}
+                  >
+                    {/* Folder Header */}
+                    <div
+                      onClick={() => toggleFolder(colGroup.id)}
+                      style={{
+                        padding: '10px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderBottom: isExpanded && items.length > 0 ? '1px solid var(--border-color)' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
+                        {isExpanded ? <ChevronDown size={15} color="var(--accent-primary)" /> : <ChevronRight size={15} color="var(--text-subtle)" />}
+                        <Folder size={16} color="var(--accent-primary)" />
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {colGroup.name}
+                        </span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>
+                          ({items.length})
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {/* Collection Settings Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenCollectionConfig(colGroup);
                           }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: (colGroup.variables?.length || colGroup.headers?.length) ? 'var(--accent-primary)' : 'var(--text-subtle)',
+                            cursor: 'pointer',
+                            padding: '4px'
+                          }}
+                          title="컬렉션 공통 설정 (변수 / 헤더)"
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                            {isExpanded ? <ChevronDown size={15} color="var(--accent-primary)" /> : <ChevronRight size={15} color="var(--text-subtle)" />}
-                            <Folder size={16} color="var(--accent-primary)" />
-                            <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {colGroup.name}
-                            </span>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>
-                              ({items.length})
-                            </span>
+                          <Settings size={14} />
+                        </button>
+
+                        {/* Delete Folder Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`)) {
+                              onDeleteCollectionGroup(colGroup.id);
+                            }
+                          }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-subtle)',
+                            cursor: 'pointer',
+                            padding: '4px'
+                          }}
+                          title="컬렉션 폴더 삭제"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Child Request Items */}
+                    {isExpanded && (
+                      <div style={{ padding: '4px 6px 6px 12px' }}>
+                        {items.length === 0 ? (
+                          <div style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
+                            하위 요청 항목이 없습니다.
                           </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            {/* Collection Settings Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenCollectionConfig(colGroup);
-                              }}
+                        ) : (
+                          items.map((reqItem) => (
+                            <div
+                              key={reqItem.id}
+                              onClick={() => onSelectCollectionItem(reqItem, colGroup)}
                               style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: (colGroup.variables?.length || colGroup.headers?.length) ? 'var(--accent-primary)' : 'var(--text-subtle)',
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                marginTop: '4px',
+                                background: 'rgba(0,0,0,0.2)',
+                                border: '1px solid rgba(255,255,255,0.05)',
                                 cursor: 'pointer',
-                                padding: '4px'
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                fontSize: '0.8rem',
+                                transition: 'all 0.15s ease'
                               }}
-                              title="컬렉션 공통 설정 (변수 / 헤더)"
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(0,0,0,0.2)';
+                              }}
                             >
-                              <Settings size={14} />
-                            </button>
-
-                            {/* Delete Folder Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`)) {
-                                  onDeleteCollectionGroup(colGroup.id);
-                                }
-                              }}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'var(--text-subtle)',
-                                cursor: 'pointer',
-                                padding: '4px'
-                              }}
-                              title="컬렉션 폴더 삭제"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Child Request Items */}
-                        {isExpanded && (
-                          <div style={{ padding: '4px 6px 6px 12px' }}>
-                            {items.length === 0 ? (
-                              <div style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
-                                하위 요청 항목이 없습니다.
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
+                                <MethodBadge method={reqItem.method} fontSize="0.68rem" padding="2px 6px" />
+                                <span style={{ color: 'var(--text-main)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {reqItem.name}
+                                </span>
                               </div>
-                            ) : (
-                              items.map((reqItem) => (
-                                <div
-                                  key={reqItem.id}
-                                  onClick={() => onSelectCollectionItem(reqItem, colGroup)}
-                                  style={{
-                                    padding: '8px 10px',
-                                    borderRadius: '6px',
-                                    marginTop: '4px',
-                                    background: 'rgba(0,0,0,0.2)',
-                                    border: '1px solid rgba(255,255,255,0.05)',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    fontSize: '0.8rem',
-                                    transition: 'all 0.15s ease'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = 'rgba(0,0,0,0.2)';
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                                    <MethodBadge method={reqItem.method} fontSize="0.68rem" padding="2px 6px" />
-                                    <span style={{ color: 'var(--text-main)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {reqItem.name}
-                                    </span>
-                                  </div>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onDeleteCollectionItem(reqItem.id);
-                                    }}
-                                    style={{
-                                      background: 'transparent',
-                                      border: 'none',
-                                      color: 'var(--text-subtle)',
-                                      cursor: 'pointer',
-                                      padding: '2px'
-                                    }}
-                                    title="요청 항목 삭제"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
-                                </div>
-                              ))
-                            )}
-                          </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteCollectionItem(reqItem.id);
+                                }}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'var(--text-subtle)',
+                                  cursor: 'pointer',
+                                  padding: '2px'
+                                }}
+                                title="요청 항목 삭제"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          ))
                         )}
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </>
-          )}
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
-      )}
-    </aside>
+      )
+      }
+    </aside >
   );
 };
 
