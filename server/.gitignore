@@ -1,0 +1,34 @@
+# Dependencies
+node_modules
+node_modules/
+
+# Compiled output
+dist
+dist/
+*.tsbuildinfo
+
+# Logs
+logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.idea
+.idea/
+.vscode
+.vscode/
+
+# Tests
+coverage
+coverage/
+
+# Environment files
+.env
+.env.*
+!.env.example
