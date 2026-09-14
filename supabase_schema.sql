@@ -25,12 +25,22 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 3. Collections Table (사용자별 요청 저장 컬렉션)
+-- 3. Collections Table (컬렉션 폴더/그룹 - 공통 변수 및 헤더 상속)
 CREATE TABLE IF NOT EXISTS public.collections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT,
+  variables JSONB DEFAULT '[]'::jsonb,
+  headers JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3-1. Collection Items Table (컬렉션 하위 API 요청 항목들)
+CREATE TABLE IF NOT EXISTS public.collection_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  collection_id UUID NOT NULL REFERENCES public.collections(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
   method TEXT NOT NULL DEFAULT 'GET',
   url TEXT NOT NULL,
   params JSONB DEFAULT '[]'::jsonb,
@@ -55,9 +65,11 @@ CREATE TABLE IF NOT EXISTS public.history (
 -- RLS (Row Level Security) 설정 및 권한 부여
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.history ENABLE ROW LEVEL SECURITY;
 
 -- RLS 정책: 누구나 본인 정보 읽기/쓰기 허용
 CREATE POLICY "Public Profiles Access" ON public.profiles FOR ALL USING (true);
 CREATE POLICY "Public Collections Access" ON public.collections FOR ALL USING (true);
+CREATE POLICY "Public Collection Items Access" ON public.collection_items FOR ALL USING (true);
 CREATE POLICY "Public History Access" ON public.history FOR ALL USING (true);

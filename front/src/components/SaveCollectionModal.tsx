@@ -1,36 +1,59 @@
-import React, { useState } from 'react';
-import { X, BookmarkPlus, Tag } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, BookmarkPlus, Tag, Folder, Plus } from 'lucide-react';
+import { CollectionGroup } from '../types';
 
 interface SaveCollectionModalProps {
   isOpen: boolean;
+  collections: CollectionGroup[];
   onClose: () => void;
-  onSave: (name: string, description?: string) => Promise<void>;
+  onSaveToFolder: (collectionId: string, requestName: string) => Promise<void>;
+  onCreateFolderAndSave: (folderName: string, requestName: string) => Promise<void>;
   defaultUrl: string;
   defaultMethod: string;
 }
 
 export const SaveCollectionModal: React.FC<SaveCollectionModalProps> = ({
   isOpen,
+  collections,
   onClose,
-  onSave,
+  onSaveToFolder,
+  onCreateFolderAndSave,
   defaultUrl,
   defaultMethod,
 }) => {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('new');
+  const [newFolderName, setNewFolderName] = useState<string>('');
+  const [requestName, setRequestName] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (collections && collections.length > 0) {
+      setSelectedFolderId(collections[0].id);
+    } else {
+      setSelectedFolderId('new');
+    }
+  }, [collections, isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!requestName.trim()) return;
 
     setLoading(true);
     try {
-      await onSave(name.trim(), description.trim());
-      setName('');
-      setDescription('');
+      if (selectedFolderId === 'new') {
+        if (!newFolderName.trim()) {
+          alert('새 컬렉션 폴더 이름을 입력해 주세요.');
+          setLoading(false);
+          return;
+        }
+        await onCreateFolderAndSave(newFolderName.trim(), requestName.trim());
+      } else {
+        await onSaveToFolder(selectedFolderId, requestName.trim());
+      }
+      setRequestName('');
+      setNewFolderName('');
       onClose();
     } catch (e) {
       alert('컬렉션 저장에 실패했습니다.');
@@ -51,7 +74,7 @@ export const SaveCollectionModal: React.FC<SaveCollectionModalProps> = ({
       zIndex: 1000
     }}>
       <div style={{
-        width: '420px',
+        width: '440px',
         background: 'var(--bg-secondary)',
         border: '1px solid var(--border-color)',
         borderRadius: '12px',
@@ -68,7 +91,7 @@ export const SaveCollectionModal: React.FC<SaveCollectionModalProps> = ({
         }}>
           <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BookmarkPlus size={18} color="var(--accent-primary)" />
-            컬렉션에 저장하기
+            컬렉션 폴더에 저장하기
           </h3>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer' }}>
             <X size={18} />
@@ -95,17 +118,85 @@ export const SaveCollectionModal: React.FC<SaveCollectionModalProps> = ({
             </span>
           </div>
 
+          {/* Collection Folder Selector */}
           <div>
             <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-              요청 이름 <span style={{ color: '#ef4444' }}>*</span>
+              컬렉션 폴더 (그룹) <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <div style={{ position: 'relative' }}>
+              <Folder size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-subtle)' }} />
+              <select
+                value={selectedFolderId}
+                onChange={(e) => setSelectedFolderId(e.target.value)}
+                style={{
+                  width: '100%',
+                  height: '40px',
+                  background: '#0d1117',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  paddingLeft: '38px',
+                  paddingRight: '12px',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                {collections.map((col) => (
+                  <option key={col.id} value={col.id} style={{ background: '#1e293b' }}>
+                    📁 {col.name} ({col.items.length}개 요청)
+                  </option>
+                ))}
+                <option value="new" style={{ background: '#1e293b' }}>
+                  ➕ 새 컬렉션 폴더 생성...
+                </option>
+              </select>
+            </div>
+          </div>
+
+          {/* New Folder Name Input */}
+          {selectedFolderId === 'new' && (
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                새 폴더 이름 <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Plus size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-subtle)' }} />
+                <input
+                  type="text"
+                  placeholder="예: Auth API 프로젝트"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    height: '40px',
+                    background: '#0d1117',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    paddingLeft: '38px',
+                    paddingRight: '12px',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Request Name Input */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+              요청 항목 이름 <span style={{ color: '#ef4444' }}>*</span>
             </label>
             <div style={{ position: 'relative' }}>
               <Tag size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-subtle)' }} />
               <input
                 type="text"
-                placeholder="예: 사용자 정보 조회 API"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                placeholder="예: 회원가입 API 요청"
+                value={requestName}
+                onChange={(e) => setRequestName(e.target.value)}
                 required
                 style={{
                   width: '100%',
@@ -123,29 +214,6 @@ export const SaveCollectionModal: React.FC<SaveCollectionModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-              설명 (선택)
-            </label>
-            <textarea
-              placeholder="API에 대한 간단한 설명을 입력하세요."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              style={{
-                width: '100%',
-                height: '70px',
-                background: '#0d1117',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                color: '#fff',
-                padding: '10px',
-                fontSize: '0.85rem',
-                outline: 'none',
-                resize: 'none'
-              }}
-            />
-          </div>
-
           <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
             <button
               type="button"
@@ -158,10 +226,10 @@ export const SaveCollectionModal: React.FC<SaveCollectionModalProps> = ({
             <button
               type="submit"
               className="btn-primary"
-              disabled={loading || !name.trim()}
+              disabled={loading || !requestName.trim()}
               style={{ flex: 1, justifyContent: 'center' }}
             >
-              {loading ? '저장 중...' : 'DB에 저장'}
+              {loading ? '저장 중...' : '폴더에 저장'}
             </button>
           </div>
         </form>

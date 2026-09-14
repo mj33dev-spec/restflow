@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
-import { History, Bookmark, Trash2, Clock, LogIn, FolderCheck } from 'lucide-react';
-import { HistoryItem, CollectionItem } from '../types';
+import { History, Bookmark, Trash2, Clock, LogIn, Folder, ChevronDown, ChevronRight, Settings, Plus, Code } from 'lucide-react';
+import { HistoryItem, CollectionGroup, CollectionRequestItem } from '../types';
 
 interface SidebarProps {
   history: HistoryItem[];
   onSelectHistory: (item: HistoryItem) => void;
   onClearHistory: () => void;
   onDeleteHistoryItem: (id: string) => void;
-  collections: CollectionItem[];
-  onSelectCollection: (item: CollectionItem) => void;
+  collections: CollectionGroup[];
+  onSelectCollectionItem: (item: CollectionRequestItem, collection: CollectionGroup) => void;
+  onDeleteCollectionGroup: (id: string) => void;
   onDeleteCollectionItem: (id: string) => void;
+  onOpenCollectionConfig: (collection: CollectionGroup) => void;
   user: any;
   onOpenAuthModal: () => void;
+  onCreateFolderClick: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -20,14 +23,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClearHistory,
   onDeleteHistoryItem,
   collections = [],
-  onSelectCollection,
+  onSelectCollectionItem,
+  onDeleteCollectionGroup,
   onDeleteCollectionItem,
+  onOpenCollectionConfig,
   user,
   onOpenAuthModal,
+  onCreateFolderClick,
 }) => {
   const [activeTab, setActiveTab] = useState<'history' | 'collections'>('history');
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+
   const historyList = Array.isArray(history) ? history : [];
   const collectionList = Array.isArray(collections) ? collections : [];
+
+  const toggleFolder = (folderId: string) => {
+    setExpandedFolders(prev => ({
+      ...prev,
+      [folderId]: prev[folderId] === undefined ? true : !prev[folderId]
+    }));
+  };
 
   return (
     <aside style={{
@@ -213,7 +228,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {/* Collections View */}
+      {/* Collections Folder Tree View */}
       {activeTab === 'collections' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {!user ? (
@@ -221,7 +236,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Bookmark size={36} style={{ opacity: 0.3, marginBottom: '12px' }} />
               <p style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>로그인 필요</p>
               <p style={{ fontSize: '0.75rem', marginTop: '6px', color: 'var(--text-subtle)' }}>
-                컬렉션을 생성하고 Supabase DB에 저장하여 관리하려면 로그인이 필요합니다.
+                컬렉션 폴더를 생성하고 API 요청 그룹을 저장하려면 로그인이 필요합니다.
               </p>
               <button
                 className="btn-primary"
@@ -241,88 +256,181 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 borderBottom: '1px solid var(--border-color)'
               }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  내 DB 컬렉션 ({collectionList.length})
+                  내 컬렉션 폴더 ({collectionList.length})
                 </span>
+                <button
+                  onClick={onCreateFolderClick}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--accent-primary)',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="새 컬렉션 폴더 생성"
+                >
+                  <Plus size={14} /> 새 폴더
+                </button>
               </div>
 
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
                 {collectionList.length === 0 ? (
                   <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-subtle)', fontSize: '0.85rem' }}>
-                    <FolderCheck size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
-                    <p>저장된 컬렉션이 없습니다.</p>
+                    <Folder size={36} style={{ opacity: 0.3, marginBottom: '8px' }} />
+                    <p style={{ fontWeight: 600 }}>저장된 컬렉션 폴더가 없습니다.</p>
                     <p style={{ fontSize: '0.75rem', marginTop: '4px' }}>
-                      상단 주소창 우측의 <strong>[★ 컬렉션에 저장]</strong> 버튼을 눌러보세요.
+                      우측 상단 <strong>[+ 새 폴더]</strong> 버튼을 누르시거나 주소창 옆의 <strong>[컬렉션 저장]</strong>을 눌러보세요.
                     </p>
                   </div>
                 ) : (
-                  collectionList.map((col) => (
-                    <div
-                      key={col.id}
-                      onClick={() => onSelectCollection(col)}
-                      style={{
-                        padding: '12px',
-                        borderRadius: '8px',
-                        marginBottom: '8px',
-                        background: 'rgba(99, 102, 241, 0.05)',
-                        border: '1px solid var(--border-color)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
-                        e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.3)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)';
-                        e.currentTarget.style.borderColor = 'var(--border-color)';
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff' }}>
-                          {col.name}
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteCollectionItem(col.id);
-                          }}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-subtle)',
-                            cursor: 'pointer',
-                            padding: '2px'
-                          }}
-                          title="컬렉션 삭제"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span className={`badge-method ${col.method}`}>
-                          {col.method}
-                        </span>
-                        <span style={{
-                          fontSize: '0.75rem',
-                          color: 'var(--text-muted)',
-                          fontFamily: 'var(--font-mono)',
-                          whiteSpace: 'nowrap',
+                  collectionList.map((colGroup) => {
+                    const isExpanded = expandedFolders[colGroup.id] !== false; // Default expanded
+                    const items = colGroup.items || [];
+
+                    return (
+                      <div
+                        key={colGroup.id}
+                        style={{
+                          marginBottom: '8px',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px',
                           overflow: 'hidden',
-                          textOverflow: 'ellipsis'
-                        }}>
-                          {col.url}
-                        </span>
-                      </div>
-                      {col.description && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', marginTop: '2px' }}>
-                          {col.description}
+                          background: 'rgba(99, 102, 241, 0.03)'
+                        }}
+                      >
+                        {/* Folder Header */}
+                        <div
+                          onClick={() => toggleFolder(colGroup.id)}
+                          style={{
+                            padding: '10px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            background: 'rgba(255,255,255,0.03)',
+                            borderBottom: isExpanded && items.length > 0 ? '1px solid var(--border-color)' : 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
+                            {isExpanded ? <ChevronDown size={15} color="var(--accent-primary)" /> : <ChevronRight size={15} color="var(--text-subtle)" />}
+                            <Folder size={16} color="var(--accent-primary)" />
+                            <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {colGroup.name}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>
+                              ({items.length})
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {/* Collection Settings Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenCollectionConfig(colGroup);
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: (colGroup.variables?.length || colGroup.headers?.length) ? 'var(--accent-primary)' : 'var(--text-subtle)',
+                                cursor: 'pointer',
+                                padding: '4px'
+                              }}
+                              title="컬렉션 공통 설정 (변수 / 헤더)"
+                            >
+                              <Settings size={14} />
+                            </button>
+
+                            {/* Delete Folder Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`)) {
+                                  onDeleteCollectionGroup(colGroup.id);
+                                }
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--text-subtle)',
+                                cursor: 'pointer',
+                                padding: '4px'
+                              }}
+                              title="컬렉션 폴더 삭제"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))
+
+                        {/* Child Request Items */}
+                        {isExpanded && (
+                          <div style={{ padding: '4px 6px 6px 12px' }}>
+                            {items.length === 0 ? (
+                              <div style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
+                                하위 요청 항목이 없습니다.
+                              </div>
+                            ) : (
+                              items.map((reqItem) => (
+                                <div
+                                  key={reqItem.id}
+                                  onClick={() => onSelectCollectionItem(reqItem, colGroup)}
+                                  style={{
+                                    padding: '8px 10px',
+                                    borderRadius: '6px',
+                                    marginTop: '4px',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    border: '1px solid rgba(255,255,255,0.05)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    fontSize: '0.8rem',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(0,0,0,0.2)';
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
+                                    <span className={`badge-method ${reqItem.method}`} style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
+                                      {reqItem.method}
+                                    </span>
+                                    <span style={{ color: 'var(--text-main)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {reqItem.name}
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteCollectionItem(reqItem.id);
+                                    }}
+                                    style={{
+                                      background: 'transparent',
+                                      border: 'none',
+                                      color: 'var(--text-subtle)',
+                                      cursor: 'pointer',
+                                      padding: '2px'
+                                    }}
+                                    title="요청 항목 삭제"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </>
@@ -332,3 +440,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
+

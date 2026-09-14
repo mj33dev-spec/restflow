@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { RequestState, ResponseResult, HistoryItem } from '../types';
+import { RequestState, ResponseResult, HistoryItem, KeyValueItem } from '../types';
 import { supabase } from './supabaseClient';
 
 const BACKEND_BASE_URL = 'http://localhost:3002';
@@ -15,26 +15,38 @@ export const interpolateVariables = (text: string, varsMap: Record<string, strin
 };
 
 // -------------------------------------------------------------
-// 1. HTTP Request Execution
+// 1. HTTP Request Execution (with Collection Inheritance)
 // -------------------------------------------------------------
-export const executeHttpRequest = async (req: RequestState): Promise<ResponseResult> => {
-  // Extract active variables into a map
+export const executeHttpRequest = async (
+  req: RequestState,
+  collectionVariables: KeyValueItem[] = [],
+  collectionHeaders: KeyValueItem[] = []
+): Promise<ResponseResult> => {
+  // Extract active variables into a map (Collection vars + Request vars)
+  const allVars = [...(collectionVariables || []), ...(req.variables || [])];
   const varsMap: Record<string, string> = {};
-  (req.variables || []).filter(v => v.enabled && v.key.trim()).forEach(v => {
+  allVars.filter(v => v.enabled && v.key && v.key.trim()).forEach(v => {
     varsMap[v.key.trim()] = v.value;
   });
 
   const finalUrl = interpolateVariables(req.url, varsMap);
 
   const activeParams: Record<string, string> = {};
-  req.params.filter(p => p.enabled && p.key.trim()).forEach(p => {
+  req.params.filter(p => p.enabled && p.key && p.key.trim()).forEach(p => {
     const key = interpolateVariables(p.key.trim(), varsMap);
     const val = interpolateVariables(p.value, varsMap);
     activeParams[key] = val;
   });
 
   const activeHeaders: Record<string, string> = {};
-  req.headers.filter(h => h.enabled && h.key.trim()).forEach(h => {
+  // 1) Apply collection level headers (e.g. Authorization / Bearer token)
+  (collectionHeaders || []).filter(h => h.enabled && h.key && h.key.trim()).forEach(h => {
+    const key = interpolateVariables(h.key.trim(), varsMap);
+    const val = interpolateVariables(h.value, varsMap);
+    activeHeaders[key] = val;
+  });
+  // 2) Apply request level headers (overrides collection headers if key collides)
+  req.headers.filter(h => h.enabled && h.key && h.key.trim()).forEach(h => {
     const key = interpolateVariables(h.key.trim(), varsMap);
     const val = interpolateVariables(h.value, varsMap);
     activeHeaders[key] = val;
@@ -309,43 +321,66 @@ export const deleteHistoryItemApi = async (id: string): Promise<boolean> => {
 };
 
 // -------------------------------------------------------------
-// 4. Supabase Collections Helpers (User-Scoped)
+// 4. Supabase Collections Helpers (Folders & Requests)
 // -------------------------------------------------------------
 export const fetchCollections = async (): Promise<any[]> => {
   try {
-    const { data, error } = await supabase
+    const { data: collectionsData, error: collectionsError } = await supabase
       .from('collections')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error || !data) {
+    if (collectionsError || !collectionsData) {
       return [];
     }
 
-    return data.map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      method: item.method,
-      url: item.url,
-      params: item.params || [],
-      headers: item.headers || [],
-      body: item.body || '',
-      timestamp: item.created_at,
-    }));
+    // Try fetching child items
+    let itemsData: any[] = [];
+    try {
+      const { data: cItems } = await supabase
+        .from('collection_items')
+        .select('*')
+        .order('created_at', { ascending: true });
+      itemsData = cItems || [];
+    } catch {
+      itemsData = [];
+    }
+
+    return collectionsData.map((col: any) => {
+      const colItems = itemsData
+        .filter((item: any) => item.collection_id === col.id)
+        .map((item: any) => ({
+          id: item.id,
+          collectionId: item.collection_id,
+          name: item.name,
+          method: item.method,
+          url: item.url,
+          params: item.params || [],
+          headers: item.headers || [],
+          body: item.body || '',
+          timestamp: item.created_at,
+        }));
+
+      return {
+        id: col.id,
+        name: col.name,
+        description: col.description || '',
+        variables: col.variables || [],
+        headers: col.headers || [],
+        items: colItems,
+        timestamp: col.created_at,
+      };
+    });
   } catch (e) {
     return [];
   }
 };
 
-export const saveCollectionItem = async (item: {
+export const createCollectionGroup = async (group: {
   name: string;
   description?: string;
-  method: string;
-  url: string;
-  params?: any[];
+  variables?: any[];
   headers?: any[];
-  body?: string;
 }): Promise<any | null> => {
   try {
     const user = (await supabase.auth.getUser()).data.user;
@@ -356,8 +391,79 @@ export const saveCollectionItem = async (item: {
       .insert([
         {
           user_id: user.id,
+          name: group.name,
+          description: group.description || null,
+          variables: group.variables || [],
+          headers: group.headers || [],
+        },
+      ])
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('Error creating collection folder:', error);
+      return null;
+    }
+
+    return {
+      id: data.id,
+      name: data.name,
+      description: data.description || '',
+      variables: data.variables || [],
+      headers: data.headers || [],
+      items: [],
+      timestamp: data.created_at,
+    };
+  } catch (e) {
+    return null;
+  }
+};
+
+export const updateCollectionGroupConfig = async (
+  collectionId: string,
+  variables: any[],
+  headers: any[]
+): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('collections')
+      .update({ variables, headers })
+      .eq('id', collectionId);
+
+    return !error;
+  } catch (e) {
+    return false;
+  }
+};
+
+export const deleteCollectionGroupApi = async (id: string): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('collections')
+      .delete()
+      .eq('id', id);
+    return !error;
+  } catch (e) {
+    return false;
+  }
+};
+
+export const saveCollectionRequestItem = async (item: {
+  collectionId: string;
+  name: string;
+  method: string;
+  url: string;
+  params?: any[];
+  headers?: any[];
+  body?: string;
+}): Promise<any | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('collection_items')
+      .insert([
+        {
+          collection_id: item.collectionId,
           name: item.name,
-          description: item.description || null,
           method: item.method,
           url: item.url,
           params: item.params || [],
@@ -369,14 +475,14 @@ export const saveCollectionItem = async (item: {
       .single();
 
     if (error || !data) {
-      console.error('Supabase save collection error:', error);
+      console.error('Error saving collection request item:', error);
       return null;
     }
 
     return {
       id: data.id,
+      collectionId: data.collection_id,
       name: data.name,
-      description: data.description,
       method: data.method,
       url: data.url,
       params: data.params || [],
@@ -385,15 +491,14 @@ export const saveCollectionItem = async (item: {
       timestamp: data.created_at,
     };
   } catch (e) {
-    console.error('Error saving collection to Supabase:', e);
     return null;
   }
 };
 
-export const deleteCollectionItemApi = async (id: string): Promise<boolean> => {
+export const deleteCollectionRequestItemApi = async (id: string): Promise<boolean> => {
   try {
     const { error } = await supabase
-      .from('collections')
+      .from('collection_items')
       .delete()
       .eq('id', id);
     return !error;

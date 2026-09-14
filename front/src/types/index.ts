@@ -40,15 +40,24 @@ export interface HistoryItem {
   body?: string;
 }
 
-export interface CollectionItem {
+export interface CollectionRequestItem {
   id: string;
+  collectionId: string;
   name: string;
-  description?: string;
   method: HttpMethod;
   url: string;
   params?: KeyValueItem[];
   headers?: KeyValueItem[];
-  variables?: KeyValueItem[];
   body?: string;
+  timestamp: string;
+}
+
+export interface CollectionGroup {
+  id: string;
+  name: string;
+  description?: string;
+  variables: KeyValueItem[];
+  headers: KeyValueItem[];
+  items: CollectionRequestItem[];
   timestamp: string;
 }
