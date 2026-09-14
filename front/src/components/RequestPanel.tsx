@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Code, Sliders, Layers, Sparkles, BookmarkPlus } from 'lucide-react';
+import { Send, Code, Sliders, Layers, Sparkles, BookmarkPlus, Braces } from 'lucide-react';
 import { RequestState, HttpMethod } from '../types';
 import { KeyValueEditor } from './KeyValueEditor';
 
@@ -18,7 +18,7 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
   isLoading,
   onOpenSaveCollection,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'params' | 'headers' | 'body'>('params');
+  const [activeSubTab, setActiveSubTab] = useState<'params' | 'headers' | 'body' | 'variables'>('params');
 
   const methods: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -155,6 +155,12 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
         >
           <Code size={14} /> 바디 (Body) {request.method === 'GET' || request.method === 'HEAD' ? '(미사용)' : '(사용 중)'}
         </button>
+        <button
+          className={`tab-btn ${activeSubTab === 'variables' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('variables')}
+        >
+          <Braces size={14} /> 변수 (Variables) ({(request.variables || []).filter(v => v.enabled && v.key).length})
+        </button>
       </div>
 
       {/* Tab Content Area */}
@@ -174,6 +180,15 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
             onChange={(headers) => onChange({ ...request, headers })}
             keyPlaceholder="헤더 이름 (예: Authorization)"
             valuePlaceholder="헤더 값 (예: Bearer token...)"
+          />
+        )}
+
+        {activeSubTab === 'variables' && (
+          <KeyValueEditor
+            items={request.variables || []}
+            onChange={(variables) => onChange({ ...request, variables })}
+            keyPlaceholder="변수 이름 (예: baseUrl, token)"
+            valuePlaceholder="변수 값 (예: http://localhost:3002)"
           />
         )}
 

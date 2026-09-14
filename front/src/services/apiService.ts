@@ -5,23 +5,50 @@ import { supabase } from './supabaseClient';
 const BACKEND_BASE_URL = 'http://localhost:3002';
 
 // -------------------------------------------------------------
+// 0. Variable Interpolation Helper
+// -------------------------------------------------------------
+export const interpolateVariables = (text: string, varsMap: Record<string, string>): string => {
+  if (!text || typeof text !== 'string') return text;
+  return text.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (match, varName) => {
+    return varName in varsMap ? varsMap[varName] : match;
+  });
+};
+
+// -------------------------------------------------------------
 // 1. HTTP Request Execution
 // -------------------------------------------------------------
 export const executeHttpRequest = async (req: RequestState): Promise<ResponseResult> => {
+  // Extract active variables into a map
+  const varsMap: Record<string, string> = {};
+  (req.variables || []).filter(v => v.enabled && v.key.trim()).forEach(v => {
+    varsMap[v.key.trim()] = v.value;
+  });
+
+  const finalUrl = interpolateVariables(req.url, varsMap);
+
   const activeParams: Record<string, string> = {};
   req.params.filter(p => p.enabled && p.key.trim()).forEach(p => {
-    activeParams[p.key.trim()] = p.value;
+    const key = interpolateVariables(p.key.trim(), varsMap);
+    const val = interpolateVariables(p.value, varsMap);
+    activeParams[key] = val;
   });
 
   const activeHeaders: Record<string, string> = {};
   req.headers.filter(h => h.enabled && h.key.trim()).forEach(h => {
-    activeHeaders[h.key.trim()] = h.value;
+    const key = interpolateVariables(h.key.trim(), varsMap);
+    const val = interpolateVariables(h.value, varsMap);
+    activeHeaders[key] = val;
   });
 
-  let parsedBody: any = req.body;
-  if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && req.bodyType === 'json') {
+  let rawBody = req.body;
+  if (rawBody && typeof rawBody === 'string') {
+    rawBody = interpolateVariables(rawBody, varsMap);
+  }
+
+  let parsedBody: any = rawBody;
+  if (req.method !== 'GET' && req.method !== 'HEAD' && rawBody && req.bodyType === 'json') {
     try {
-      parsedBody = JSON.parse(req.body);
+      parsedBody = JSON.parse(rawBody);
     } catch (e) {
       // Keep as string if raw or invalid JSON
     }
@@ -32,7 +59,7 @@ export const executeHttpRequest = async (req: RequestState): Promise<ResponseRes
     try {
       const res = await axios.post(`${BACKEND_BASE_URL}/api/proxy`, {
         method: req.method,
-        url: req.url,
+        url: finalUrl,
         params: activeParams,
         headers: activeHeaders,
         data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
@@ -65,7 +92,7 @@ export const executeHttpRequest = async (req: RequestState): Promise<ResponseRes
   try {
     const res = await axios({
       method: req.method,
-      url: req.url,
+      url: finalUrl,
       params: activeParams,
       headers: activeHeaders,
       data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,

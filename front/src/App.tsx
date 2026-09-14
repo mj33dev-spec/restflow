@@ -36,14 +36,18 @@ export const App: React.FC = () => {
 
   const [request, setRequest] = useState<RequestState>({
     method: 'GET',
-    url: 'http://localhost:3002/api/echo?query=hello',
+    url: '{{baseUrl}}/api/echo?query={{queryVal}}',
     params: [
-      { id: '1', key: 'query', value: 'hello', enabled: true },
+      { id: '1', key: 'query', value: '{{queryVal}}', enabled: true },
       { id: '2', key: 'page', value: '1', enabled: true },
     ],
     headers: [
       { id: 'h1', key: 'Content-Type', value: 'application/json', enabled: true },
       { id: 'h2', key: 'Accept', value: 'application/json', enabled: true },
+    ],
+    variables: [
+      { id: 'v1', key: 'baseUrl', value: 'http://localhost:3002', enabled: true },
+      { id: 'v2', key: 'queryVal', value: 'hello', enabled: true },
     ],
     bodyType: 'json',
     body: '{\n  "client": "RestFlow React",\n  "test": true\n}',
@@ -198,6 +202,7 @@ export const App: React.FC = () => {
       url: col.url,
       params: Array.isArray(col.params) ? col.params : request.params,
       headers: Array.isArray(col.headers) ? col.headers : request.headers,
+      variables: Array.isArray(col.variables) ? col.variables : request.variables,
       body: col.body || '',
     });
   };

@@ -12,6 +12,7 @@ export interface RequestState {
   url: string;
   params: KeyValueItem[];
   headers: KeyValueItem[];
+  variables: KeyValueItem[];
   bodyType: 'json' | 'raw';
   body: string;
   useProxy: boolean;
@@ -47,6 +48,7 @@ export interface CollectionItem {
   url: string;
   params?: KeyValueItem[];
   headers?: KeyValueItem[];
+  variables?: KeyValueItem[];
   body?: string;
   timestamp: string;
 }
