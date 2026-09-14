@@ -506,3 +506,74 @@ export const deleteCollectionRequestItemApi = async (id: string): Promise<boolea
     return false;
   }
 };
+
+// -------------------------------------------------------------
+// 5. User Layout Settings (DB / Auth Metadata Sync)
+// -------------------------------------------------------------
+export interface UserLayoutSettings {
+  sidebarWidth?: number;
+  requestPanelHeight?: number;
+}
+
+export const fetchUserSettings = async (): Promise<UserLayoutSettings | null> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    // 1. Try Supabase Auth user_metadata
+    if (user.user_metadata?.layoutSettings) {
+      return user.user_metadata.layoutSettings;
+    }
+
+    // 2. Fallback to public.profiles table settings column if present
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('settings')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.settings?.layoutSettings) {
+      return profile.settings.layoutSettings;
+    }
+
+    return null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const saveUserSettings = async (settings: UserLayoutSettings): Promise<boolean> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const currentMetadata = user.user_metadata || {};
+    const updatedLayoutSettings = {
+      ...(currentMetadata.layoutSettings || {}),
+      ...settings,
+    };
+
+    // Update in Supabase Auth user_metadata
+    await supabase.auth.updateUser({
+      data: {
+        ...currentMetadata,
+        layoutSettings: updatedLayoutSettings,
+      },
+    });
+
+    // Also update in public.profiles table settings column
+    await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        email: user.email,
+        settings: { layoutSettings: updatedLayoutSettings },
+      });
+
+    return true;
+  } catch (e) {
+    console.error('Error saving user layout settings:', e);
+    return false;
+  }
+};
+

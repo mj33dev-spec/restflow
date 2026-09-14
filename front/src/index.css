@@ -226,3 +226,37 @@ body {
 .code-box:focus {
   border-color: var(--border-active);
 }
+
+/* Resizers for drag-resizing panels */
+.resizer-vertical {
+  width: 5px;
+  cursor: col-resize;
+  background: var(--border-color);
+  position: relative;
+  z-index: 20;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+.resizer-vertical:hover,
+.resizer-vertical.active {
+  background: var(--accent-primary);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.resizer-horizontal {
+  height: 5px;
+  cursor: row-resize;
+  background: var(--border-color);
+  position: relative;
+  z-index: 20;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+.resizer-horizontal:hover,
+.resizer-horizontal.active {
+  background: var(--accent-primary);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+

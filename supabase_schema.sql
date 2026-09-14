@@ -2,19 +2,24 @@
 -- Supabase Schema & Trigger Setup for RestFlow
 -- ============================================================
 
--- 1. Public Profiles Table (사용자 프로필 관리)
+-- 1. Public Profiles Table (사용자 프로필 및 UI 레이아웃 설정 관리)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
+  settings JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- 기존 테이블이 이미 존재하는 경우를 대비한 컬럼 추가 구문 (안전 처리)
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb;
 
 -- 2. Trigger: auth.users 회원가입 시 public.profiles에 자동 행 삽입
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.profiles (id, email)
-  VALUES (NEW.id, NEW.email);
+  VALUES (NEW.id, NEW.email)
+  ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -68,8 +73,16 @@ ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.history ENABLE ROW LEVEL SECURITY;
 
--- RLS 정책: 누구나 본인 정보 읽기/쓰기 허용
+-- RLS 정책: 기존 정책 안전 제거 후 재등록 (중복 에러 방지)
+DROP POLICY IF EXISTS "Public Profiles Access" ON public.profiles;
 CREATE POLICY "Public Profiles Access" ON public.profiles FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Public Collections Access" ON public.collections;
 CREATE POLICY "Public Collections Access" ON public.collections FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Public Collection Items Access" ON public.collection_items;
 CREATE POLICY "Public Collection Items Access" ON public.collection_items FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Public History Access" ON public.history;
 CREATE POLICY "Public History Access" ON public.history FOR ALL USING (true);
+

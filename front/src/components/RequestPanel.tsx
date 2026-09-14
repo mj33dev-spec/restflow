@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Send, Code, Sliders, Layers, Sparkles, BookmarkPlus, Braces } from 'lucide-react';
 import { RequestState, HttpMethod } from '../types';
 import { KeyValueEditor } from './KeyValueEditor';
+import { TabButton } from './common/TabButton';
 
 interface RequestPanelProps {
+  height?: number;
   request: RequestState;
   onChange: (req: RequestState) => void;
   onSend: () => void;
@@ -12,6 +14,7 @@ interface RequestPanelProps {
 }
 
 export const RequestPanel: React.FC<RequestPanelProps> = ({
+  height,
   request,
   onChange,
   onSend,
@@ -44,7 +47,8 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '50%',
+      height: height !== undefined ? `${height}%` : '50%',
+      flexShrink: 0,
       borderBottom: '1px solid var(--border-color)',
       background: 'var(--bg-primary)'
     }}>
@@ -136,31 +140,34 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
 
       {/* Sub Tabs */}
       <div className="tab-header">
-        <button
-          className={`tab-btn ${activeSubTab === 'params' ? 'active' : ''}`}
+        <TabButton
+          active={activeSubTab === 'params'}
           onClick={() => setActiveSubTab('params')}
-        >
-          <Sliders size={14} /> 파라미터 (Params) ({request.params.filter(p => p.enabled && p.key).length})
-        </button>
-        <button
-          className={`tab-btn ${activeSubTab === 'headers' ? 'active' : ''}`}
+          icon={<Sliders size={14} />}
+          label="파라미터 (Params)"
+          badge={request.params.filter(p => p.enabled && p.key).length}
+        />
+        <TabButton
+          active={activeSubTab === 'headers'}
           onClick={() => setActiveSubTab('headers')}
-        >
-          <Layers size={14} /> 헤더 (Headers) ({request.headers.filter(h => h.enabled && h.key).length})
-        </button>
-        <button
-          className={`tab-btn ${activeSubTab === 'body' ? 'active' : ''}`}
+          icon={<Layers size={14} />}
+          label="헤더 (Headers)"
+          badge={request.headers.filter(h => h.enabled && h.key).length}
+        />
+        <TabButton
+          active={activeSubTab === 'body'}
           onClick={() => setActiveSubTab('body')}
-          style={{ opacity: request.method === 'GET' || request.method === 'HEAD' ? 0.6 : 1 }}
-        >
-          <Code size={14} /> 바디 (Body) {request.method === 'GET' || request.method === 'HEAD' ? '(미사용)' : '(사용 중)'}
-        </button>
-        <button
-          className={`tab-btn ${activeSubTab === 'variables' ? 'active' : ''}`}
+          icon={<Code size={14} />}
+          label={`바디 (Body) ${request.method === 'GET' || request.method === 'HEAD' ? '(미사용)' : '(사용 중)'}`}
+          opacity={request.method === 'GET' || request.method === 'HEAD' ? 0.6 : 1}
+        />
+        <TabButton
+          active={activeSubTab === 'variables'}
           onClick={() => setActiveSubTab('variables')}
-        >
-          <Braces size={14} /> 변수 (Variables) ({(request.variables || []).filter(v => v.enabled && v.key).length})
-        </button>
+          icon={<Braces size={14} />}
+          label="변수 (Variables)"
+          badge={(request.variables || []).filter(v => v.enabled && v.key).length}
+        />
       </div>
 
       {/* Tab Content Area */}

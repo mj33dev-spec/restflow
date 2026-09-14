@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { History, Bookmark, Trash2, Clock, LogIn, Folder, ChevronDown, ChevronRight, Settings, Plus, Code } from 'lucide-react';
+import { History, Bookmark, Trash2, Clock, LogIn, Folder, ChevronDown, ChevronRight, Settings, Plus } from 'lucide-react';
 import { HistoryItem, CollectionGroup, CollectionRequestItem } from '../types';
+import { MethodBadge } from './common/MethodBadge';
+import { EmptyState } from './common/EmptyState';
+import { TabButton } from './common/TabButton';
 
 interface SidebarProps {
+  width?: number;
   history: HistoryItem[];
   onSelectHistory: (item: HistoryItem) => void;
   onClearHistory: () => void;
@@ -18,6 +22,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
+  width,
   history = [],
   onSelectHistory,
   onClearHistory,
@@ -46,7 +51,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside style={{
-      width: '320px',
+      width: width !== undefined ? `${width}px` : '320px',
+      flexShrink: 0,
       background: 'var(--bg-secondary)',
       borderRight: '1px solid var(--border-color)',
       display: 'flex',
@@ -60,46 +66,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
         borderBottom: '1px solid var(--border-color)',
         background: 'rgba(0,0,0,0.15)'
       }}>
-        <button
+        <TabButton
+          active={activeTab === 'history'}
           onClick={() => setActiveTab('history')}
+          icon={<History size={16} />}
+          label={`실행 이력 (${historyList.length})`}
           style={{
             flex: 1,
             padding: '14px',
-            border: 'none',
-            background: 'transparent',
-            color: activeTab === 'history' ? 'var(--accent-primary)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'history' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-            fontWeight: 600,
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
+            borderRadius: 0,
+            justifyContent: 'center'
           }}
-        >
-          <History size={16} /> 실행 이력 ({historyList.length})
-        </button>
-        <button
+        />
+        <TabButton
+          active={activeTab === 'collections'}
           onClick={() => setActiveTab('collections')}
+          icon={<Bookmark size={16} />}
+          label={`컬렉션 (${user ? collectionList.length : '🔒'})`}
           style={{
             flex: 1,
             padding: '14px',
-            border: 'none',
-            background: 'transparent',
-            color: activeTab === 'collections' ? 'var(--accent-primary)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'collections' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-            fontWeight: 600,
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
+            borderRadius: 0,
+            justifyContent: 'center'
           }}
-        >
-          <Bookmark size={16} /> 컬렉션 ({user ? collectionList.length : '🔒'})
-        </button>
+        />
       </div>
 
       {/* History List View */}
@@ -137,16 +127,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
             {historyList.length === 0 ? (
-              <div style={{
-                padding: '40px 20px',
-                textAlign: 'center',
-                color: 'var(--text-subtle)',
-                fontSize: '0.85rem'
-              }}>
-                <Clock size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
-                <p>저장된 요청 이력이 없습니다.</p>
-                <p style={{ fontSize: '0.75rem', marginTop: '4px' }}>요청을 전송하면 이곳에 기록됩니다.</p>
-              </div>
+              <EmptyState
+                icon={<Clock size={32} />}
+                title="저장된 요청 이력이 없습니다."
+                description="요청을 전송하면 이곳에 기록됩니다."
+              />
             ) : (
               historyList.map((item) => (
                 <div
@@ -174,9 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span className={`badge-method ${item.method}`}>
-                      {item.method}
-                    </span>
+                    <MethodBadge method={item.method} />
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {item.status !== undefined && (
                         <span style={{
@@ -232,20 +215,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {activeTab === 'collections' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {!user ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              <Bookmark size={36} style={{ opacity: 0.3, marginBottom: '12px' }} />
-              <p style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>로그인 필요</p>
-              <p style={{ fontSize: '0.75rem', marginTop: '6px', color: 'var(--text-subtle)' }}>
-                컬렉션 폴더를 생성하고 API 요청 그룹을 저장하려면 로그인이 필요합니다.
-              </p>
-              <button
-                className="btn-primary"
-                onClick={onOpenAuthModal}
-                style={{ marginTop: '16px', fontSize: '0.8rem', height: '36px' }}
-              >
-                <LogIn size={14} /> 로그인하기
-              </button>
-            </div>
+            <EmptyState
+              icon={<Bookmark size={36} />}
+              title="로그인 필요"
+              description="컬렉션 폴더를 생성하고 API 요청 그룹을 저장하려면 로그인이 필요합니다."
+              action={
+                <button
+                  className="btn-primary"
+                  onClick={onOpenAuthModal}
+                  style={{ fontSize: '0.8rem', height: '36px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <LogIn size={14} /> 로그인하기
+                </button>
+              }
+            />
           ) : (
             <>
               <div style={{
@@ -279,13 +262,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
                 {collectionList.length === 0 ? (
-                  <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-subtle)', fontSize: '0.85rem' }}>
-                    <Folder size={36} style={{ opacity: 0.3, marginBottom: '8px' }} />
-                    <p style={{ fontWeight: 600 }}>저장된 컬렉션 폴더가 없습니다.</p>
-                    <p style={{ fontSize: '0.75rem', marginTop: '4px' }}>
-                      우측 상단 <strong>[+ 새 폴더]</strong> 버튼을 누르시거나 주소창 옆의 <strong>[컬렉션 저장]</strong>을 눌러보세요.
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={<Folder size={36} />}
+                    title="저장된 컬렉션 폴더가 없습니다."
+                    description={
+                      <>
+                        우측 상단 <strong>[+ 새 폴더]</strong> 버튼을 누르시거나 주소창 옆의 <strong>[컬렉션 저장]</strong>을 눌러보세요.
+                      </>
+                    }
+                  />
                 ) : (
                   collectionList.map((colGroup) => {
                     const isExpanded = expandedFolders[colGroup.id] !== false; // Default expanded
@@ -400,9 +385,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   }}
                                 >
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                                    <span className={`badge-method ${reqItem.method}`} style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
-                                      {reqItem.method}
-                                    </span>
+                                    <MethodBadge method={reqItem.method} fontSize="0.68rem" padding="2px 6px" />
                                     <span style={{ color: 'var(--text-main)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       {reqItem.name}
                                     </span>
@@ -440,4 +423,5 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
+
 
