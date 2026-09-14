@@ -17,6 +17,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
   if (!isOpen) return null;
 
+  const handleSwitchMode = (newMode: 'signin' | 'signup') => {
+    setMode(newMode);
+    setEmail('');
+    setPassword('');
+    setErrorMsg('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -33,11 +40,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         onClose();
       } else {
         await signUpWithEmail(email, password);
-        alert('회원가입이 완료되었습니다! 바로 로그인해 보세요.');
-        setMode('signin');
+        try {
+          await signInWithEmail(email, password);
+          onSuccess();
+          onClose();
+        } catch {
+          alert('회원가입이 완료되었습니다! 로그인해 주세요.');
+          handleSwitchMode('signin');
+        }
       }
     } catch (err: any) {
-      setErrorMsg(err.message || '인증 처리에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.');
+      let msg = err.message || '인증 처리에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.';
+      if (msg.includes('Email not confirmed')) {
+        msg = '이메일 인증이 필요합니다. Supabase Authentication 설정에서 [Confirm email]을 OFF로 꺼주세요.';
+      } else if (msg.includes('Invalid login credentials')) {
+        msg = '이메일 또는 비밀번호가 올바르지 않습니다. (계정이 존재하지 않거나 비밀번호 오류)';
+      } else if (msg.includes('User already registered')) {
+        msg = '이미 가입되어 있는 이메일 주소입니다.';
+      } else if (msg.toLowerCase().includes('rate limit')) {
+        msg = '이메일 발송 제한(Rate Limit)을 초과했습니다. Supabase 대시보드 (Authentication -> Providers -> Email)에서 [Confirm email]을 OFF로 끄시거나 5~10분 후 다시 시도해 주세요.';
+      } else if (msg.toLowerCase().includes('signups are disabled')) {
+        msg = '이메일 회원가입 기능이 꺼져있습니다. Supabase 대시보드 (Authentication -> Providers -> Email)에서 [Allow new users to sign up] 또는 [Enable Email provider] 스위치를 ON(켜짐)으로 켜주세요.';
+      }
+      setErrorMsg(msg);
     } finally {
       setLoading(false);
     }
@@ -89,7 +114,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
           <button
             type="button"
-            onClick={() => { setMode('signin'); setErrorMsg(''); }}
+            onClick={() => handleSwitchMode('signin')}
             style={{
               flex: 1,
               padding: '12px',
@@ -106,7 +131,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
           </button>
           <button
             type="button"
-            onClick={() => { setMode('signup'); setErrorMsg(''); }}
+            onClick={() => handleSwitchMode('signup')}
             style={{
               flex: 1,
               padding: '12px',
