@@ -294,7 +294,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   padding: '2px 4px',
                   borderRadius: '3px',
                 }}
-                title="드래그하여 폴더 위치 변경"
+                title="드래그하여 컬렉션 위치 변경"
               >
                 <GripVertical size={14} />
               </div>
@@ -314,7 +314,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   borderRadius: '4px',
                   background: 'rgba(255,255,255,0.05)'
                 }}
-                title={isExpanded ? '폴더 접기' : '폴더 펼치기'}
+                title={isExpanded ? '컬렉션 접기' : '컬렉션 펼치기'}
               >
                 {isExpanded ? <ChevronDown size={14} color="var(--accent-primary)" /> : <ChevronRight size={14} color="var(--text-subtle)" />}
                 <Folder size={15} color="var(--accent-primary)" />
@@ -404,7 +404,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   display: 'flex',
                   alignItems: 'center'
                 }}
-                title="이 폴더에 새 API 요청 추가"
+                title="이 컬렉션에 새 API 요청 추가"
               >
                 <Plus size={14} />
               </button>
@@ -412,8 +412,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  const confirmed = await DAlert.confirmAsync(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`, {
-                    title: '컬렉션 폴더 삭제',
+                  const confirmed = await DAlert.confirmAsync(`'${colGroup.name}' 컬렉션 및 하위 요청 항목을 삭제하시겠습니까?`, {
+                    title: '컬렉션 삭제',
                     type: 'error',
                   });
                   if (confirmed) {
@@ -427,7 +427,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   cursor: 'pointer',
                   padding: '4px'
                 }}
-                title="컬렉션 폴더 삭제"
+                title="컬렉션 삭제"
               >
                 <Trash2 size={13} />
               </button>
@@ -499,7 +499,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           padding: '2px 4px',
                           borderRadius: '3px',
                         }}
-                        title="드래그하여 다른 폴더로 이동"
+                        title="드래그하여 다른 컬렉션으로 이동"
                       >
                         <GripVertical size={13} />
                       </div>
@@ -822,7 +822,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             borderBottom: '1px solid var(--border-color)'
           }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              내 컬렉션 폴더 ({collectionList.length})
+              내 컬렉션 ({collectionList.length})
             </span>
             <button
               onClick={onCreateFolderClick}
@@ -837,9 +837,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 alignItems: 'center',
                 gap: '4px'
               }}
-              title="새 컬렉션 폴더 생성"
+              title="새 컬렉션 생성"
             >
-              <Plus size={14} /> 새 폴더
+              <Plus size={14} /> 새 컬렉션
             </button>
           </div>
 
@@ -847,10 +847,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {collectionList.length === 0 ? (
               <EmptyState
                 icon={<Folder size={36} />}
-                title="저장된 컬렉션 폴더가 없습니다."
+                title="저장된 컬렉션가 없습니다."
                 description={
                   <>
-                    상단 <strong>[+ 새 폴더]</strong> 버튼을 눌러 새 컬렉션 폴더를 생성해 보세요.
+                    상단 <strong>[+ 새 컬렉션]</strong> 버튼을 눌러 새 컬렉션를 생성해 보세요.
                   </>
                 }
               />

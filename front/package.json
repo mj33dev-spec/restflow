@@ -12,11 +12,13 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:3000 && electron .\"",
     "electron:build:win": "npm run build && npx electron-packager . RestFlow --platform=win32 --arch=x64 --out=dist-desktop --overwrite --icon=electron/icon.ico --ignore=\"^/(src|public|release|dist-desktop|\\.git)\"",
-    "electron:builder:win": "npm run build && npx electron-builder --win --x64"
+    "electron:builder:win": "npm run build && npx electron-builder --win --x64",
+    "electron:builder:mac": "npm run build && npx electron-builder --mac"
   },
   "build": {
     "appId": "com.restflow.desktop",
     "productName": "RestFlow",
+    "electronVersion": "30.0.0",
     "directories": {
       "output": "dist-desktop"
     },
@@ -29,6 +31,13 @@
       "target": [
         "nsis",
         "portable"
+      ]
+    },
+    "mac": {
+      "icon": "electron/icon.png",
+      "target": [
+        "dmg",
+        "zip"
       ]
     }
   },

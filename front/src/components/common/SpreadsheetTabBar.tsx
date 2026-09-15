@@ -229,7 +229,7 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
                 maxWidth: '180px',
                 flexShrink: 0
               }}
-              title="드래그하여 시트 위치 이동 (더블클릭하여 시트 이름 변경)"
+              title="드래그하여 Request 위치 이동 (더블클릭하여 Request 이름 변경)"
             >
               {tab.type === 'collectionConfig' ? (
                 <Folder size={13} color="var(--accent-primary)" />
@@ -284,7 +284,7 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
                   onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.7')}
-                  title="시트 닫기"
+                  title="Request 닫기"
                 >
                   <X size={12} />
                 </button>
@@ -313,7 +313,7 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
           flexShrink: 0,
           transition: 'all 0.15s ease'
         }}
-        title="열려있는 전체 시트 목록 보기"
+        title="열려있는 전체 Request 목록 보기"
       >
         <MoreHorizontal size={16} />
       </button>
@@ -351,7 +351,7 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
             alignItems: 'center',
             justifyContent: 'space-between'
           }}>
-            <span>열린 시트 목록 ({tabs.length})</span>
+            <span>열린 Request 목록 ({tabs.length})</span>
           </div>
 
           {tabs.map((tab) => {
@@ -413,7 +413,7 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
                     onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
-                    title="시트 닫기"
+                    title="Request 닫기"
                   >
                     <X size={12} />
                   </button>

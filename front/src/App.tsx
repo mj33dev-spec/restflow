@@ -158,9 +158,13 @@ export const App: React.FC = () => {
     }
     
     const updatedTab = { ...activeTab, request: newReq, title: newTitle };
-    setTabs((prev) =>
-      prev.map((t) => (t.id === activeTab.id ? updatedTab : t))
-    );
+    setTabs((prev) => {
+      if (prev.length === 0) {
+        setActiveTabId(updatedTab.id);
+        return [updatedTab];
+      }
+      return prev.map((t) => (t.id === activeTab.id ? updatedTab : t));
+    });
 
     saveUserSettings({
       sidebarWidth,
@@ -215,11 +219,10 @@ export const App: React.FC = () => {
   };
 
   const handleCloseTab = (id: string) => {
-    if (tabs.length <= 1) return;
     const filtered = tabs.filter((t) => t.id !== id);
     let newActiveId = activeTabId;
     if (activeTabId === id) {
-      newActiveId = filtered[filtered.length - 1].id;
+      newActiveId = filtered.length > 0 ? filtered[filtered.length - 1].id : '';
     }
     setTabs(filtered);
     setActiveTabId(newActiveId);
@@ -236,7 +239,7 @@ export const App: React.FC = () => {
     saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: updatedTabs, activeTabId });
 
     if (targetTab.collectionItemId) {
-      DLoading('시트 이름 변경 중...');
+      DLoading('Request 이름 변경 중...');
       try {
         await updateCollectionRequestItemApi(targetTab.collectionItemId, { name: trimmed });
         setCollections((prev) =>
@@ -247,9 +250,9 @@ export const App: React.FC = () => {
             ),
           }))
         );
-        DLoading.dismiss('시트 이름이 변경되었습니다!');
+        DLoading.dismiss('Request 이름이 변경되었습니다!');
       } catch {
-        DLoading.dismiss('시트 이름 변경 실패');
+        DLoading.dismiss('Request 이름 변경 실패');
       }
     }
   };
@@ -300,10 +303,44 @@ export const App: React.FC = () => {
     }
   };
 
-  // Listen for Supabase Auth state changes & load user data
   useEffect(() => {
     loadUserSettingsData();
+  }, []);
 
+  // Handle Command+W for macOS and Ctrl+W for Windows to close modals/tabs instead of quitting the app
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // macOS: Command+W, Windows: Ctrl+W
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w') {
+        if (configCollectionModalTarget) {
+          e.preventDefault();
+          setConfigCollectionModalTarget(null);
+          return;
+        }
+        if (isSaveCollectionModalOpen) {
+          e.preventDefault();
+          setIsSaveCollectionModalOpen(false);
+          return;
+        }
+        if (isAuthModalOpen) {
+          e.preventDefault();
+          setIsAuthModalOpen(false);
+          return;
+        }
+        if (tabs.length > 0) {
+          e.preventDefault();
+          handleCloseTab(activeTabId);
+          return;
+        }
+        // If tabs.length === 0, allow default (app quit)
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [configCollectionModalTarget, isSaveCollectionModalOpen, isAuthModalOpen, tabs, activeTabId]);
+
+  // Listen for Supabase Auth state changes & load user data
+  useEffect(() => {
     getCurrentUser().then((usr) => {
       setUser(usr);
       if (usr) {
@@ -495,11 +532,13 @@ export const App: React.FC = () => {
   const handleClearHistory = async () => {
     await clearHistoryApi();
     setHistory([]);
+    DAlert.success('모든 요청 기록이 삭제되었습니다.', { title: '기록 삭제 완료' });
   };
 
   const handleDeleteHistoryItem = async (id: string) => {
     await deleteHistoryItemApi(id);
     setHistory((prev) => prev.filter((h) => h.id !== id));
+    DAlert.success('선택한 요청 기록이 삭제되었습니다.', { title: '기록 삭제 완료' });
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -564,8 +603,8 @@ export const App: React.FC = () => {
     try {
       if (saveFolderId === 'new') {
         if (!saveNewFolderName.trim()) {
-          alert('새 컬렉션 폴더 이름을 입력해 주세요.');
-          DLoading.dismiss('새 컬렉션 폴더 이름을 입력해 주세요.');
+          alert('새 컬렉션 이름을 입력해 주세요.');
+          DLoading.dismiss('새 컬렉션 이름을 입력해 주세요.');
           setSaveLoading(false);
           return;
         }
@@ -622,7 +661,7 @@ export const App: React.FC = () => {
     });
 
     if (!newFolder) {
-      alert('새 컬렉션 폴더를 생성할 수 없습니다.');
+      alert('새 컬렉션를 생성할 수 없습니다.');
       return;
     }
 
@@ -773,6 +812,7 @@ export const App: React.FC = () => {
     setTabs(newTabs);
     setActiveTabId(newActiveId);
     saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: newTabs, activeTabId: newActiveId });
+    DAlert.success('컬렉션가 성공적으로 삭제되었습니다.', { title: '컬렉션 삭제 완료' });
   };
 
   const handleRenameCollectionGroup = async (id: string, newName: string) => {
@@ -780,7 +820,7 @@ export const App: React.FC = () => {
     const target = collections.find((c) => c.id === id);
     if (!target || !trimmed || target.name === trimmed) return;
 
-    DLoading('컬렉션 폴더 이름 저장 중...');
+    DLoading('컬렉션 이름 저장 중...');
     await updateCollectionGroupNameApi(id, trimmed);
     setCollections((prev) =>
       prev.map((c) => (c.id === id ? { ...c, name: trimmed } : c))
@@ -879,6 +919,7 @@ export const App: React.FC = () => {
     setTabs(newTabs);
     setActiveTabId(newActiveId);
     saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: newTabs, activeTabId: newActiveId });
+    DAlert.success('Request가 성공적으로 삭제되었습니다.', { title: 'Request 삭제 완료' });
   };
 
   const handleAutoSaveActiveTabRequestItem = async () => {
@@ -925,7 +966,7 @@ export const App: React.FC = () => {
       const visited = new Set<string>();
       while (curr && !visited.has(curr.id)) {
         if (curr.id === folderId) {
-          DAlert.error('하위 폴더를 상위 폴더로 지정할 수 없습니다.', { title: '이동 불가' });
+          DAlert.error('하위 컬렉션를 상위 컬렉션로 지정할 수 없습니다.', { title: '이동 불가' });
           return;
         }
         visited.add(curr.id);
@@ -1160,15 +1201,15 @@ export const App: React.FC = () => {
   };
 
   const handleCreateFolderDirectly = async () => {
-    const defaultFolderName = `새 컬렉션 폴더 ${collections.length + 1}`;
+    const defaultFolderName = `새 컬렉션 ${collections.length + 1}`;
 
-    DLoading('새 컬렉션 폴더 생성 중...');
+    DLoading('새 컬렉션 생성 중...');
     const newFolder = await createCollectionGroup({ name: defaultFolderName });
     if (newFolder) {
       setCollections((prev) => [newFolder, ...prev]);
-      DLoading.dismiss('컬렉션 폴더가 생성되었습니다!');
+      DLoading.dismiss('컬렉션가 생성되었습니다!');
     } else {
-      DLoading.dismiss('폴더 생성이 취소되었습니다.');
+      DLoading.dismiss('컬렉션 생성이 취소되었습니다.');
     }
   };
 
@@ -1411,7 +1452,7 @@ export const App: React.FC = () => {
         isOpen={isSaveCollectionModalOpen}
         onClose={() => setIsSaveCollectionModalOpen(false)}
         width="440px"
-        title="컬렉션 폴더에 저장하기"
+        title="컬렉션에 저장하기"
         icon={<BookmarkPlus size={18} color="var(--accent-primary)" />}
         body={
           <form id="save-collection-form" onSubmit={handleSaveCollectionSubmit} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -1433,7 +1474,7 @@ export const App: React.FC = () => {
 
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-                컬렉션 폴더 (그룹) <span style={{ color: '#ef4444' }}>*</span>
+                컬렉션 (그룹) <span style={{ color: '#ef4444' }}>*</span>
               </label>
               <div style={{ position: 'relative' }}>
                 <Folder size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-subtle)' }} />
@@ -1460,7 +1501,7 @@ export const App: React.FC = () => {
                     </option>
                   ))}
                   <option value="new" style={{ background: '#1e293b' }}>
-                    ➕ 새 컬렉션 폴더 생성...
+                    ➕ 새 컬렉션 생성...
                   </option>
                 </select>
               </div>
@@ -1469,7 +1510,7 @@ export const App: React.FC = () => {
             {saveFolderId === 'new' && (
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-                  새 폴더 이름 <span style={{ color: '#ef4444' }}>*</span>
+                  새 컬렉션 이름 <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Plus size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-subtle)' }} />
@@ -1542,7 +1583,7 @@ export const App: React.FC = () => {
               disabled={saveLoading || !saveRequestName.trim()}
               style={{ flex: 1, justifyContent: 'center' }}
             >
-              {saveLoading ? '저장 중...' : '폴더에 저장'}
+              {saveLoading ? '저장 중...' : '컬렉션에 저장'}
             </button>
           </>
         }

@@ -130,7 +130,7 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
               {collection.name} <span style={{ fontSize: '0.8rem', color: 'var(--text-subtle)', fontWeight: 400 }}>(컬렉션 공통 설정)</span>
             </h2>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-              이 컬렉션 및 하위 폴더의 모든 API 요청에 자동으로 적용될 공통 헤더 및 변수를 설정합니다.
+              이 컬렉션 및 하위 컬렉션의 모든 API 요청에 자동으로 적용될 공통 헤더 및 변수를 설정합니다.
             </p>
           </div>
         </div>
@@ -191,7 +191,7 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
         }}>
           <Link size={15} />
           <span>
-            🔗 <strong>상위 그룹 연동 상속:</strong> 이 폴더는 상위 컬렉션 (<strong>{parentPath}</strong>)의 공통 헤더 및 변수와 자동 연동·상속됩니다.
+            🔗 <strong>상위 그룹 연동 상속:</strong> 이 컬렉션는 상위 컬렉션 (<strong>{parentPath}</strong>)의 공통 헤더 및 변수와 자동 연동·상속됩니다.
           </span>
         </div>
       )}
@@ -209,7 +209,7 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
       }}>
         <AlertCircle size={15} />
         <span>
-          💡 <strong>자동 실시간 계층 상속:</strong> 이 컬렉션에 설정한 공통 헤더 및 변수는 모든 하위 폴더와 API 요청 시트에 실시간으로 계층 연동되어 자동 적용됩니다.
+          💡 <strong>자동 실시간 계층 상속:</strong> 이 컬렉션에 설정한 공통 헤더 및 변수는 모든 하위 컬렉션와 API 요청 Request에 실시간으로 계층 연동되어 자동 적용됩니다.
         </span>
       </div>
 
