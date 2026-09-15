@@ -30,9 +30,3 @@ npm run electron:build:win
 | **데스크톱 개발 모드** | `npm run electron:dev` | Electron 데스크톱 앱 개발 모드 실행 |
 | **웹 개발 모드** | `npm run dev` | Vite 웹 개발 서버 실행 (`http://localhost:3000`) |
 
----
-
-## 🔗 Supabase 설정 정보
-- **Project Name**: restflow
-- **Project ID**: pccrsjjzzphecqfclmqj
-- **API URL**: https://pccrsjjzzphecqfclmqj.supabase.co

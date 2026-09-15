@@ -218,8 +218,8 @@ export const executeHttpRequest = async (
 // -------------------------------------------------------------
 // 2. Supabase Auth Helpers
 // -------------------------------------------------------------
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjY3Jzamp6enBoZWNxZmNsbXFqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTMxOTMzMywiZXhwIjoyMTA0ODk1MzMzfQ.aY7qfXkKSAbDHHS6iqTB9xVeJyb33h8boSu3aPz6c40';
-const SUPABASE_PROJECT_URL = 'https://pccrsjjzzphecqfclmqj.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
+const SUPABASE_PROJECT_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
 export const signUpWithEmail = async (email: string, pass: string) => {
   // 1. Try standard Supabase Auth signUp
