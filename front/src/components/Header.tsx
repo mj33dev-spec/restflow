@@ -3,8 +3,6 @@ import { Zap, ShieldCheck, PlayCircle, LogIn, LogOut, User } from 'lucide-react'
 import { HttpMethod } from '../types';
 
 interface HeaderProps {
-  useProxy: boolean;
-  onToggleProxy: (val: boolean) => void;
   onQuickPreset: (method: HttpMethod, url: string, body?: string) => void;
   user: any;
   onOpenAuthModal: () => void;
@@ -12,8 +10,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  useProxy,
-  onToggleProxy,
   onQuickPreset,
   user,
   onOpenAuthModal,
@@ -83,52 +79,8 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
 
-      {/* Right Controls (Proxy Toggle + Auth) */}
+      {/* Right Controls (Auth) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        {/* Proxy Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-            <ShieldCheck size={16} color={useProxy ? '#10b981' : '#64748b'} />
-            <span style={{ color: useProxy ? '#f1f5f9' : 'var(--text-muted)' }}>
-              CORS 우회 프록시
-            </span>
-          </div>
-          <label style={{
-            position: 'relative',
-            display: 'inline-block',
-            width: '44px',
-            height: '24px',
-            cursor: 'pointer'
-          }}>
-            <input
-              type="checkbox"
-              checked={useProxy}
-              onChange={(e) => onToggleProxy(e.target.checked)}
-              style={{ opacity: 0, width: 0, height: 0 }}
-            />
-            <span style={{
-              position: 'absolute',
-              top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: useProxy ? 'var(--accent-primary)' : '#334155',
-              borderRadius: '24px',
-              transition: '0.3s'
-            }}>
-              <span style={{
-                position: 'absolute',
-                content: '""',
-                height: '18px',
-                width: '18px',
-                left: useProxy ? '22px' : '3px',
-                bottom: '3px',
-                backgroundColor: 'white',
-                borderRadius: '50%',
-                transition: '0.3s'
-              }} />
-            </span>
-          </label>
-        </div>
-
-        <div style={{ height: '20px', width: '1px', background: 'var(--border-color)' }} />
 
         {/* Auth User Info / Login Button */}
         {user ? (

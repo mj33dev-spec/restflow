@@ -15,7 +15,6 @@ export interface RequestState {
   variables: KeyValueItem[];
   bodyType: 'json' | 'raw';
   body: string;
-  useProxy: boolean;
 }
 
 export interface ResponseResult {

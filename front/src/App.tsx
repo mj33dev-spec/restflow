@@ -53,7 +53,6 @@ const createDefaultRequest = (): RequestState => ({
   variables: [],
   bodyType: 'json',
   body: '',
-  useProxy: false,
 });
 
 const createInitialTab = (id = 'tab-1', title = '요청 1'): ApiTab => ({
@@ -65,7 +64,6 @@ const createInitialTab = (id = 'tab-1', title = '요청 1'): ApiTab => ({
 });
 
 export const App: React.FC = () => {
-  const [useProxy, setUseProxy] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Multi-Tab Api States
@@ -325,11 +323,6 @@ export const App: React.FC = () => {
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-  const handleToggleProxy = (val: boolean) => {
-    setUseProxy(val);
-    updateActiveTab({ request: { ...activeTab.request, useProxy: val } });
-  };
-
   const handleSend = async () => {
     if (!activeTab.request.url.trim()) return;
     setIsLoading(true);
@@ -338,7 +331,7 @@ export const App: React.FC = () => {
     const colVars = activeTab.activeCollection ? activeTab.activeCollection.variables : [];
     const colHeaders = activeTab.activeCollection ? activeTab.activeCollection.headers : [];
 
-    const result = await executeHttpRequest({ ...activeTab.request, useProxy }, colVars, colHeaders);
+    const result = await executeHttpRequest(activeTab.request, colVars, colHeaders);
     updateActiveTab({ response: result });
     setIsLoading(false);
 
@@ -465,6 +458,15 @@ export const App: React.FC = () => {
       }
     } catch (err: any) {
       let msg = err.message || '인증 처리에 실패했습니다.';
+      if (msg.includes('Invalid login credentials')) {
+        msg = '이메일 또는 비밀번호가 올바르지 않습니다.';
+      } else if (msg.includes('Email not confirmed')) {
+        msg = '이메일 인증이 필요합니다.';
+      } else if (msg.includes('Password should be at least 6 characters')) {
+        msg = '비밀번호는 최소 6자 이상 입력하셔야 합니다.';
+      } else if (msg.includes('already registered')) {
+        msg = '이미 회원가입이 완료된 이메일 계정입니다.';
+      }
       setAuthErrorMsg(msg);
       DLoading.dismiss(msg);
     } finally {
@@ -571,7 +573,6 @@ export const App: React.FC = () => {
       headers: Array.isArray(item.headers) ? item.headers : [],
       variables: Array.isArray((item as any).variables) ? (item as any).variables : [],
       body: item.body || '',
-      useProxy: useProxy,
     };
 
     const targetTitle = item.name;
@@ -889,8 +890,6 @@ export const App: React.FC = () => {
   return (
     <div className="app-container">
       <Header
-        useProxy={useProxy}
-        onToggleProxy={handleToggleProxy}
         onQuickPreset={handleQuickPreset}
         user={user}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}

@@ -2,7 +2,6 @@ import axios from 'axios';
 import { RequestState, ResponseResult, HistoryItem, KeyValueItem, ApiTab } from '../types';
 import { supabase } from './supabaseClient';
 
-const BACKEND_BASE_URL = 'http://localhost:5000';
 
 // -------------------------------------------------------------
 // 0. Variable Interpolation Helper
@@ -85,11 +84,25 @@ export const executeHttpRequest = async (
   let parsedBody: any = rawBody;
   if (req.method !== 'GET' && req.method !== 'HEAD' && rawBody && req.bodyType === 'json') {
     try {
-      parsedBody = JSON.parse(rawBody);
-      if (typeof parsedBody === 'string') {
+      let parsed = JSON.parse(rawBody);
+      // 1. Recursive un-escaping of double-stringified JSON
+      while (typeof parsed === 'string') {
         try {
-          parsedBody = JSON.parse(parsedBody);
-        } catch {}
+          parsed = JSON.parse(parsed);
+        } catch {
+          break;
+        }
+      }
+
+      // 2. Auto-extract 'data' payload if user pasted full API response wrapper
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if ('data' in parsed && parsed.data && typeof parsed.data === 'object' && Object.keys(parsed.data).length > 0) {
+          parsedBody = parsed.data;
+        } else {
+          parsedBody = parsed;
+        }
+      } else {
+        parsedBody = parsed;
       }
     } catch (e) {
       // Keep as string if raw or invalid JSON
@@ -127,108 +140,48 @@ export const executeHttpRequest = async (
     };
   };
 
-  // Helper for Direct Execution
-  const executeDirect = async (): Promise<ResponseResult> => {
-    try {
-      const res = await axios({
-        method: req.method,
-        url: finalUrl,
-        params: activeParams,
-        headers: activeHeaders,
-        data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
-        validateStatus: () => true,
-        timeout: 10000,
-      });
-      const endTime = Date.now();
-      const rawStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data || {});
+  // Direct OS / Browser HTTP Request Execution
+  try {
+    const res = await axios({
+      method: req.method,
+      url: finalUrl,
+      params: activeParams,
+      headers: activeHeaders,
+      data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
+      validateStatus: () => true,
+      timeout: 10000,
+    });
+    const endTime = Date.now();
+    const rawStr = typeof res.data === 'string' ? res.data : JSON.stringify(res.data || {});
 
-      return {
-        status: res.status,
-        statusText: res.statusText || 'OK',
-        headers: res.headers as Record<string, string>,
-        data: res.data,
-        timeMs: endTime - startTime,
-        sizeBytes: new Blob([rawStr]).size,
-        isError: res.status >= 400,
-      };
-    } catch (err: any) {
-      if (isEchoEndpoint) {
-        return getMockEchoResponse();
-      }
-      const endTime = Date.now();
-      return {
-        status: 0,
-        statusText: '네트워크 / CORS 오류',
-        headers: {},
-        data: {
-          error: err.message || 'CORS 제약 또는 네트워크 연결 실패.',
-          message: '대상 URL에 접근할 수 없거나 CORS 제약으로 인해 응답을 수신하지 못했습니다.',
-          tip: "상단의 'CORS 우회 프록시' 토글을 켜서 CORS 및 네트워크 제약을 우회해보세요!",
-        },
-        timeMs: endTime - startTime,
-        sizeBytes: 0,
-        isError: true,
-      };
+    return {
+      status: res.status,
+      statusText: res.statusText || 'OK',
+      headers: res.headers as Record<string, string>,
+      data: res.data,
+      timeMs: endTime - startTime,
+      sizeBytes: new Blob([rawStr]).size,
+      isError: res.status >= 400,
+    };
+  } catch (err: any) {
+    if (isEchoEndpoint) {
+      return getMockEchoResponse();
     }
-  };
-
-  // 1. Send via CORS Backend Proxy (if useProxy enabled)
-  if (req.useProxy) {
-    try {
-      const res = await axios.post(`${BACKEND_BASE_URL}/api/proxy`, {
-        method: req.method,
-        url: finalUrl,
-        params: activeParams,
-        headers: activeHeaders,
-        data: (req.method !== 'GET' && req.method !== 'HEAD') ? parsedBody : undefined,
-      }, { timeout: 10000 });
-
-      return {
-        status: res.data.status,
-        statusText: res.data.statusText,
-        headers: res.data.headers || {},
-        data: res.data.data,
-        timeMs: res.data.timeMs,
-        sizeBytes: res.data.sizeBytes,
-        isError: res.data.status >= 400,
-      };
-    } catch (err: any) {
-      // If Proxy fails, try Direct Request or Mock fallback!
-      if (isEchoEndpoint) {
-        try {
-          return await executeDirect();
-        } catch {
-          return getMockEchoResponse();
-        }
-      }
-
-      try {
-        const directRes = await executeDirect();
-        if (!directRes.isError || directRes.status > 0) {
-          return directRes;
-        }
-      } catch (e) {
-        // Ignore fallback error
-      }
-
-      return {
-        status: err.response?.status || 500,
-        statusText: '프록시 요청 실패',
-        headers: {},
-        data: err.response?.data || {
-          error: err.message || 'CORS 우회 프록시 연결 실패',
-          message: 'CORS 우회 프록시 서버에 연결하지 못했습니다.',
-          tip: '요청하려는 API 서버가 실행 중인지 확인하거나, 상단 프록시 토글을 끄고 직접 브라우저 요청을 시도하세요.',
-        },
-        timeMs: Date.now() - startTime,
-        sizeBytes: 0,
-        isError: true,
-      };
-    }
+    const endTime = Date.now();
+    return {
+      status: 0,
+      statusText: '네트워크 연결 오류',
+      headers: {},
+      data: {
+        error: err.message || '네트워크 연결 실패.',
+        message: '대상 URL에 접근할 수 없거나 서버가 응답하지 않습니다.',
+        tip: '요청할 URL 주소와 서버 실행 상태를 확인해 주세요.',
+      },
+      timeMs: endTime - startTime,
+      sizeBytes: 0,
+      isError: true,
+    };
   }
-
-  // 2. Direct Browser Request
-  return await executeDirect();
 };
 
 // -------------------------------------------------------------
@@ -291,7 +244,19 @@ export const signInWithEmail = async (email: string, pass: string) => {
     email,
     password: pass,
   });
-  if (error) throw error;
+  if (error) {
+    const msg = error.message || '';
+    if (msg.includes('Invalid login credentials')) {
+      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
+    }
+    if (msg.includes('Email not confirmed')) {
+      throw new Error('이메일 인증이 필요합니다.');
+    }
+    if (msg.includes('User not found')) {
+      throw new Error('존재하지 않는 계정입니다.');
+    }
+    throw new Error(msg || '로그인 처리에 실패했습니다.');
+  }
   return data;
 };
 

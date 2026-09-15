@@ -2,11 +2,33 @@
   "name": "restflow-front",
   "private": true,
   "version": "1.0.0",
+  "description": "RestFlow API Testing Desktop Application",
+  "author": "RestFlow Team",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build:win": "npm run build && npx electron-packager . RestFlow --platform=win32 --arch=x64 --out=dist-desktop --overwrite --ignore=\"^/(src|public|release|\\.git)\""
+  },
+  "build": {
+    "appId": "com.restflow.desktop",
+    "productName": "RestFlow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    }
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
@@ -16,10 +38,15 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^10.0.5",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.3.3",
-    "vite": "^5.1.6"
+    "vite": "^5.1.6",
+    "wait-on": "^9.1.0"
   }
 }

@@ -34,14 +34,33 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
   const methods: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
   const handleFormatJson = () => {
+    if (!request.body || !request.body.trim()) return;
     try {
-      const parsed = JSON.parse(request.body);
+      let raw = request.body.trim();
+      let parsed = JSON.parse(raw);
+
+      // 1. Recursive JSON.parse if stringified multiple times
+      while (typeof parsed === 'string') {
+        try {
+          parsed = JSON.parse(parsed);
+        } catch {
+          break;
+        }
+      }
+
+      // 2. Auto-unwrap response wrapper 'data' field if user pasted full API response
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if ('data' in parsed && parsed.data && typeof parsed.data === 'object' && Object.keys(parsed.data).length > 0) {
+          parsed = parsed.data;
+        }
+      }
+
       onChange({
         ...request,
         body: JSON.stringify(parsed, null, 2),
       });
     } catch (e) {
-      alert('올바른 JSON 형식이 아닙니다. 구문을 확인해 주세요.');
+      alert('올바른 JSON 형식이 아닙니다. 큰따옴표(") 및 구문을 확인해 주세요.');
     }
   };
 
@@ -54,33 +73,24 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
   // Combine collection level variables/headers with request level variables/headers for display
   const colVars = activeCollection?.variables || [];
   const reqVars = request.variables || [];
-  const colVarKeys = new Set(colVars.filter(v => v.key && v.key.trim()).map(v => v.key.trim()));
+  const colVarIds = new Set(colVars.map(v => v.id));
   const displayVariables = [
     ...colVars,
-    ...reqVars.filter(v => !colVarKeys.has(v.key.trim())),
+    ...reqVars.filter(v => !colVarIds.has(v.id)),
   ];
 
   const colHeaders = activeCollection?.headers || [];
   const reqHeaders = request.headers || [];
-  const colHeaderKeys = new Set(colHeaders.filter(h => h.key && h.key.trim()).map(h => h.key.trim()));
+  const colHeaderIds = new Set(colHeaders.map(h => h.id));
   const displayHeaders = [
     ...colHeaders,
-    ...reqHeaders.filter(h => !colHeaderKeys.has(h.key.trim())),
+    ...reqHeaders.filter(h => !colHeaderIds.has(h.id)),
   ];
 
   const handleVariablesChange = (newVars: KeyValueItem[]) => {
     if (activeCollection && onUpdateCollectionConfig) {
-      // Separate variables belonging to collection vs request specific vars
-      const updatedColVars: KeyValueItem[] = [];
-      const updatedReqVars: KeyValueItem[] = [];
-
-      newVars.forEach(v => {
-        if (colVarKeys.has(v.key.trim()) || (activeCollection && colVars.length === 0 && updatedColVars.length === 0)) {
-          updatedColVars.push(v);
-        } else {
-          updatedReqVars.push(v);
-        }
-      });
+      const updatedColVars = newVars.filter(v => colVarIds.has(v.id));
+      const updatedReqVars = newVars.filter(v => !colVarIds.has(v.id));
 
       onUpdateCollectionConfig(activeCollection.id, updatedColVars, activeCollection.headers || []);
       onChange({ ...request, variables: updatedReqVars });
@@ -91,16 +101,8 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
 
   const handleHeadersChange = (newHeaders: KeyValueItem[]) => {
     if (activeCollection && onUpdateCollectionConfig) {
-      const updatedColHeaders: KeyValueItem[] = [];
-      const updatedReqHeaders: KeyValueItem[] = [];
-
-      newHeaders.forEach(h => {
-        if (colHeaderKeys.has(h.key.trim())) {
-          updatedColHeaders.push(h);
-        } else {
-          updatedReqHeaders.push(h);
-        }
-      });
+      const updatedColHeaders = newHeaders.filter(h => colHeaderIds.has(h.id));
+      const updatedReqHeaders = newHeaders.filter(h => !colHeaderIds.has(h.id));
 
       onUpdateCollectionConfig(activeCollection.id, activeCollection.variables || [], updatedColHeaders);
       onChange({ ...request, headers: updatedReqHeaders });
