@@ -11,13 +11,14 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build:win": "npm run build && npx electron-packager . RestFlow --platform=win32 --arch=x64 --out=dist-desktop --overwrite --icon=electron/icon --ignore=\"^/(src|public|release|\\.git)\""
+    "electron:build:win": "npm run build && npx electron-packager . RestFlow --platform=win32 --arch=x64 --out=dist-desktop --overwrite --icon=electron/icon.ico --ignore=\"^/(src|public|release|dist-desktop|\\.git)\"",
+    "electron:builder:win": "npm run build && npx electron-builder --win --x64"
   },
   "build": {
     "appId": "com.restflow.desktop",
     "productName": "RestFlow",
     "directories": {
-      "output": "release"
+      "output": "dist-desktop"
     },
     "files": [
       "dist/**/*",
