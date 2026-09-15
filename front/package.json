@@ -11,7 +11,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build:win": "npm run build && npx electron-packager . RestFlow --platform=win32 --arch=x64 --out=dist-desktop --overwrite --ignore=\"^/(src|public|release|\\.git)\""
+    "electron:build:win": "npm run build && npx electron-packager . RestFlow --platform=win32 --arch=x64 --out=dist-desktop --overwrite --icon=electron/icon --ignore=\"^/(src|public|release|\\.git)\""
   },
   "build": {
     "appId": "com.restflow.desktop",
@@ -24,6 +24,7 @@
       "electron/**/*"
     ],
     "win": {
+      "icon": "electron/icon.ico",
       "target": [
         "nsis",
         "portable"
@@ -45,6 +46,7 @@
     "concurrently": "^10.0.5",
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.2",
     "typescript": "^5.3.3",
     "vite": "^5.1.6",
     "wait-on": "^9.1.0"

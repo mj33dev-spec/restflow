@@ -6,8 +6,6 @@ dist
 dist/
 dist-desktop
 dist-desktop/
-electron
-electron/
 release
 release/
 
