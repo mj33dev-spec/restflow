@@ -205,9 +205,10 @@
   width: 100%;
 }
 
-.d-alert-button-group > button {
-  flex: 1;
+.d-alert-footer button {
   height: 38px;
+  min-width: 90px;
+  padding: 0 18px;
   border-radius: 8px;
   font-weight: 600;
   font-size: 0.85rem;
@@ -216,6 +217,11 @@
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.d-alert-button-group > button {
+  flex: 1;
 }
 
 .d-btn-neutral {

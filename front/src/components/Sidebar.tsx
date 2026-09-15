@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { History, Bookmark, Trash2, Clock, Folder, ChevronDown, ChevronRight, Plus, Pencil } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { History, Bookmark, Trash2, Clock, Folder, ChevronDown, ChevronRight, Plus, Pencil, GripVertical } from 'lucide-react';
 import { HistoryItem, CollectionGroup, CollectionRequestItem } from '../types';
 import { MethodBadge } from './common/MethodBadge';
 import { EmptyState } from './common/EmptyState';
@@ -20,6 +20,8 @@ interface SidebarProps {
   onRenameCollectionGroup?: (id: string, newName: string) => Promise<void>;
   onRenameCollectionItem?: (id: string, newName: string) => Promise<void>;
   onAddRequestToCollection?: (collection: CollectionGroup) => void;
+  onMoveFolderToParent?: (folderId: string, parentId: string | null, targetBeforeFolderId?: string | null) => void;
+  onMoveItemToFolder?: (itemId: string, targetFolderId: string, targetBeforeItemId?: string | null) => void;
   user: any;
   onOpenAuthModal: () => void;
   onCreateFolderClick: () => void;
@@ -41,13 +43,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRenameCollectionGroup,
   onRenameCollectionItem,
   onAddRequestToCollection,
+  onMoveFolderToParent,
+  onMoveItemToFolder,
   user,
   onOpenAuthModal,
   onCreateFolderClick,
   activeCollectionItemId,
   activeConfigCollectionId,
 }) => {
-  const [activeTab, setActiveTab] = useState<'history' | 'collections'>('history');
+  const [activeTabType, setActiveTabType] = useState<'collections' | 'history'>('collections');
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState<string>('');
@@ -57,8 +61,130 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [editingItemName, setEditingItemName] = useState<string>('');
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
 
+  // Custom Mouse Dragging State & Ref (Bypasses Chrome Native DnD Engine Lockups 100%)
+  const dragItemRef = useRef<{ type: 'folder' | 'item'; id: string; sourceFolderId?: string; name: string } | null>(null);
+  const [activeDragInfo, setActiveDragInfo] = useState<{ name: string; x: number; y: number } | null>(null);
+  const [dropTargetInfo, setDropTargetInfo] = useState<{ type?: 'folder' | 'item'; id: string; folderId?: string; position: 'before' | 'inside' } | null>(null);
+
   const historyList = Array.isArray(history) ? history : [];
   const collectionList = Array.isArray(collections) ? collections : [];
+
+  const handleGripMouseDown = (
+    e: React.MouseEvent,
+    item: { type: 'folder' | 'item'; id: string; sourceFolderId?: string; name: string }
+  ) => {
+    if (e.button !== 0) return; // Primary left click only
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let isDragging = false;
+
+    dragItemRef.current = item;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const dist = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (dist > 4) {
+        isDragging = true;
+        setActiveDragInfo({
+          name: item.name,
+          x: moveEvent.clientX + 12,
+          y: moveEvent.clientY + 12,
+        });
+
+        const hoveredEl = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+        const targetItemEl = hoveredEl?.closest('[data-item-id]') as HTMLElement | null;
+        const targetFolderEl = hoveredEl?.closest('[data-folder-id]') as HTMLElement | null;
+
+        if (targetItemEl) {
+          const targetItemId = targetItemEl.getAttribute('data-item-id')!;
+          const targetFolderId = targetItemEl.getAttribute('data-folder-id')!;
+
+          if (item.type === 'item' && targetItemId === item.id) {
+            setDropTargetInfo(null);
+            return;
+          }
+
+          setDropTargetInfo((prev) => {
+            if (prev?.type === 'item' && prev?.id === targetItemId && prev?.position === 'before') return prev;
+            return { type: 'item', id: targetItemId, folderId: targetFolderId, position: 'before' };
+          });
+        } else if (targetFolderEl) {
+          const targetFolderId = targetFolderEl.getAttribute('data-folder-id')!;
+
+          if (item.type === 'folder' && targetFolderId === item.id) {
+            setDropTargetInfo(null);
+            return;
+          }
+
+          const rect = targetFolderEl.getBoundingClientRect();
+          const relY = moveEvent.clientY - rect.top;
+          const position: 'before' | 'inside' = (item.type === 'folder' && relY < 14) ? 'before' : 'inside';
+
+          setDropTargetInfo((prev) => {
+            if (prev?.type === 'folder' && prev?.id === targetFolderId && prev?.position === position) return prev;
+            return { type: 'folder', id: targetFolderId, position };
+          });
+        } else {
+          setDropTargetInfo(null);
+        }
+      }
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+
+      setActiveDragInfo(null);
+      setDropTargetInfo(null);
+
+      if (isDragging && dragItemRef.current) {
+        const hoveredEl = document.elementFromPoint(upEvent.clientX, upEvent.clientY);
+        const targetItemEl = hoveredEl?.closest('[data-item-id]') as HTMLElement | null;
+        const targetFolderEl = hoveredEl?.closest('[data-folder-id]') as HTMLElement | null;
+
+        if (targetItemEl && item.type === 'item') {
+          const targetItemId = targetItemEl.getAttribute('data-item-id')!;
+          const targetFolderId = targetItemEl.getAttribute('data-folder-id')!;
+          if (targetItemId !== item.id && onMoveItemToFolder) {
+            onMoveItemToFolder(item.id, targetFolderId, targetItemId);
+          }
+        } else if (targetFolderEl) {
+          const targetFolderId = targetFolderEl.getAttribute('data-folder-id')!;
+          const targetFolder = collectionList.find((c) => c.id === targetFolderId);
+          const rect = targetFolderEl.getBoundingClientRect();
+          const relY = upEvent.clientY - rect.top;
+
+          if (item.type === 'folder') {
+            const position: 'before' | 'inside' = relY < 14 ? 'before' : 'inside';
+            if (position === 'before' && targetFolder) {
+              if (onMoveFolderToParent) {
+                onMoveFolderToParent(item.id, targetFolder.parentId || null, targetFolder.id);
+              }
+            } else if (position === 'inside') {
+              if (item.id !== targetFolderId && onMoveFolderToParent) {
+                onMoveFolderToParent(item.id, targetFolderId, null);
+              }
+            }
+          } else if (item.type === 'item') {
+            if (onMoveItemToFolder) {
+              onMoveItemToFolder(item.id, targetFolderId, null);
+            }
+          }
+        }
+      }
+
+      dragItemRef.current = null;
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({
@@ -91,6 +217,392 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setEditingItemId(null);
   };
 
+  const renderFolderTree = (parentId: string | null = null, depth: number = 0) => {
+    const currentFolders = collectionList.filter((col) => {
+      if (parentId === null) {
+        return !col.parentId || !collectionList.some((p) => p.id === col.parentId);
+      }
+      return col.parentId === parentId;
+    });
+
+    return currentFolders.map((colGroup) => {
+      const isExpanded = expandedFolders[colGroup.id] !== false; // Default expanded
+      const items = colGroup.items || [];
+      const isConfigSelected = activeConfigCollectionId === colGroup.id;
+      const subFolders = collectionList.filter((c) => c.parentId === colGroup.id);
+      const isDropBefore = dropTargetInfo?.type === 'folder' && dropTargetInfo?.id === colGroup.id && dropTargetInfo?.position === 'before';
+      const isDropInside = dropTargetInfo?.id === colGroup.id && dropTargetInfo?.position === 'inside';
+
+      return (
+        <React.Fragment key={colGroup.id}>
+          {isDropBefore && (
+            <hr
+              style={{
+                border: 'none',
+                height: '3px',
+                background: '#6366f1',
+                margin: '4px 0',
+                borderRadius: '2px',
+                marginLeft: depth > 0 ? `${depth * 10}px` : '0px',
+              }}
+            />
+          )}
+          <div
+            data-folder-id={colGroup.id}
+            style={{
+              marginBottom: '6px',
+              border: isDropInside ? '2px dashed var(--accent-primary)' : '1px solid var(--border-color)',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              background: isDropInside ? 'rgba(99, 102, 241, 0.18)' : 'rgba(99, 102, 241, 0.03)',
+              boxShadow: isDropInside ? '0 0 12px rgba(99, 102, 241, 0.35)' : 'none',
+              transition: 'all 0.15s ease',
+              marginLeft: depth > 0 ? `${depth * 10}px` : '0px',
+            }}
+          >
+          {/* Folder Header */}
+          <div
+            onClick={() => onOpenCollectionConfig(colGroup)}
+            title="클릭 시 컬렉션 공통 설정(변수/헤더) 열기"
+            style={{
+              padding: '8px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              background: isConfigSelected ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255,255,255,0.03)',
+              borderBottom: (isExpanded && (items.length > 0 || subFolders.length > 0)) ? '1px solid var(--border-color)' : 'none',
+              transition: 'background 0.15s ease'
+            }}
+            onMouseEnter={(e) => {
+              if (!isConfigSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+            }}
+            onMouseLeave={(e) => {
+              if (!isConfigSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+              {/* Drag Handle Icon - Triggers Custom Mouse Drag */}
+              <div
+                onMouseDown={(e) => handleGripMouseDown(e, { type: 'folder', id: colGroup.id, name: colGroup.name })}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  cursor: 'grab',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--text-subtle)',
+                  padding: '2px 4px',
+                  borderRadius: '3px',
+                }}
+                title="드래그하여 폴더 위치 변경"
+              >
+                <GripVertical size={14} />
+              </div>
+
+              {/* Expand Toggle & Icon */}
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFolder(colGroup.id);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                  borderRadius: '4px',
+                  background: 'rgba(255,255,255,0.05)'
+                }}
+                title={isExpanded ? '폴더 접기' : '폴더 펼치기'}
+              >
+                {isExpanded ? <ChevronDown size={14} color="var(--accent-primary)" /> : <ChevronRight size={14} color="var(--text-subtle)" />}
+                <Folder size={15} color="var(--accent-primary)" />
+              </div>
+
+              {/* Inline Name Editor */}
+              {editingFolderId === colGroup.id ? (
+                <input
+                  type="text"
+                  value={editingFolderName}
+                  onChange={(e) => setEditingFolderName(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleFinishRename(colGroup.id, colGroup.name);
+                    if (e.key === 'Escape') setEditingFolderId(null);
+                  }}
+                  onBlur={() => handleFinishRename(colGroup.id, colGroup.name)}
+                  autoFocus
+                  style={{
+                    background: '#0d1117',
+                    border: '1px solid var(--accent-primary)',
+                    color: '#fff',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    outline: 'none',
+                    width: '110px'
+                  }}
+                />
+              ) : (
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingFolderId(colGroup.id);
+                    setEditingFolderName(colGroup.name);
+                  }}
+                  onMouseEnter={() => setHoveredFolderId(colGroup.id)}
+                  onMouseLeave={() => setHoveredFolderId(null)}
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    color: '#fff',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    borderBottom: hoveredFolderId === colGroup.id ? '1px dashed var(--accent-primary)' : '1px solid transparent',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="클릭하여 컬렉션 이름 수정"
+                >
+                  {colGroup.name}
+                  <Pencil
+                    size={11}
+                    style={{
+                      opacity: hoveredFolderId === colGroup.id ? 1 : 0,
+                      transition: 'opacity 0.15s ease',
+                      color: 'var(--accent-primary)'
+                    }}
+                  />
+                </span>
+              )}
+
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>
+                ({items.length})
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onAddRequestToCollection) {
+                    onAddRequestToCollection(colGroup);
+                  }
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--accent-primary)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                title="이 폴더에 새 API 요청 추가"
+              >
+                <Plus size={14} />
+              </button>
+
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const confirmed = await DAlert.confirmAsync(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`, {
+                    title: '컬렉션 폴더 삭제',
+                    type: 'error',
+                  });
+                  if (confirmed) {
+                    onDeleteCollectionGroup(colGroup.id);
+                  }
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-subtle)',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+                title="컬렉션 폴더 삭제"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+
+          {/* Child Items & Recursive Sub-folders */}
+          {isExpanded && (
+            <div style={{ padding: '4px 4px 6px 6px' }}>
+              {/* Recursive Sub-folders */}
+              {renderFolderTree(colGroup.id, depth + 1)}
+
+              {/* Request Items */}
+              {items.length > 0 && items.map((reqItem) => {
+                const isItemSelected = activeCollectionItemId === reqItem.id;
+                const isItemDropBefore =
+                  dropTargetInfo?.type === 'item' &&
+                  dropTargetInfo?.id === reqItem.id &&
+                  dropTargetInfo?.position === 'before';
+
+                return (
+                  <React.Fragment key={reqItem.id}>
+                    {isItemDropBefore && (
+                      <hr
+                        style={{
+                          border: 'none',
+                          height: '3px',
+                          background: '#6366f1',
+                          margin: '4px 0',
+                          borderRadius: '2px',
+                        }}
+                      />
+                    )}
+                    <div
+                      data-item-id={reqItem.id}
+                      data-folder-id={colGroup.id}
+                      onClick={() => onSelectCollectionItem(reqItem, colGroup)}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        marginTop: '4px',
+                        background: isItemSelected ? 'rgba(99, 102, 241, 0.28)' : 'rgba(0,0,0,0.2)',
+                        border: isItemSelected ? '1px solid var(--accent-primary)' : '1px solid rgba(255,255,255,0.05)',
+                        boxShadow: isItemSelected ? '0 0 10px rgba(99, 102, 241, 0.3)' : 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '0.78rem',
+                        transition: 'all 0.15s ease'
+                      }}
+                    onMouseEnter={(e) => {
+                      if (!isItemSelected) e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isItemSelected) e.currentTarget.style.background = 'rgba(0,0,0,0.2)';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                      {/* Drag Handle Icon for Item */}
+                      <div
+                        onMouseDown={(e) => handleGripMouseDown(e, { type: 'item', id: reqItem.id, sourceFolderId: colGroup.id, name: reqItem.name })}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          cursor: 'grab',
+                          display: 'flex',
+                          alignItems: 'center',
+                          color: 'var(--text-subtle)',
+                          padding: '2px 4px',
+                          borderRadius: '3px',
+                        }}
+                        title="드래그하여 다른 폴더로 이동"
+                      >
+                        <GripVertical size={13} />
+                      </div>
+
+                      <div style={{ width: '56px', minWidth: '56px', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-start', flexShrink: 0 }}>
+                        <MethodBadge method={reqItem.method} fontSize="0.65rem" padding="2px 5px" />
+                      </div>
+                      {editingItemId === reqItem.id ? (
+                        <input
+                          type="text"
+                          value={editingItemName}
+                          onChange={(e) => setEditingItemName(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleFinishRenameItem(reqItem.id, reqItem.name);
+                            if (e.key === 'Escape') setEditingItemId(null);
+                          }}
+                          onBlur={() => handleFinishRenameItem(reqItem.id, reqItem.name)}
+                          autoFocus
+                          style={{
+                            background: '#0d1117',
+                            border: '1px solid var(--accent-primary)',
+                            color: '#fff',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            outline: 'none',
+                            width: '100px'
+                          }}
+                        />
+                      ) : (
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingItemId(reqItem.id);
+                            setEditingItemName(reqItem.name);
+                          }}
+                          onMouseEnter={() => setHoveredItemId(reqItem.id)}
+                          onMouseLeave={() => setHoveredItemId(null)}
+                          style={{
+                            color: 'var(--text-main)',
+                            fontWeight: 600,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            borderBottom: hoveredItemId === reqItem.id ? '1px dashed var(--accent-primary)' : '1px solid transparent',
+                            transition: 'all 0.15s ease'
+                          }}
+                          title="클릭하여 요청 이름 수정"
+                        >
+                          {reqItem.name}
+                          <Pencil
+                            size={10}
+                            style={{
+                              opacity: hoveredItemId === reqItem.id ? 1 : 0,
+                              transition: 'opacity 0.15s ease',
+                              color: 'var(--accent-primary)',
+                              flexShrink: 0
+                            }}
+                          />
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteCollectionItem(reqItem.id);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-subtle)',
+                        cursor: 'pointer',
+                        padding: '2px'
+                      }}
+                      title="요청 항목 삭제"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+
+              {items.length === 0 && subFolders.length === 0 && (
+                <div style={{ padding: '6px 10px', fontSize: '0.72rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
+                  하위 항목이 없습니다. (드래그하여 이동 가능)
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </React.Fragment>
+    );
+  });
+};
+
   return (
     <aside style={{
       width: width !== undefined ? `${width}px` : '320px',
@@ -102,6 +614,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
       height: '100%',
       userSelect: 'none'
     }}>
+      {/* Floating Drag Avatar Badge */}
+      {activeDragInfo && (
+        <div
+          style={{
+            position: 'fixed',
+            left: activeDragInfo.x,
+            top: activeDragInfo.y,
+            pointerEvents: 'none',
+            zIndex: 99999,
+            background: '#6366f1',
+            color: '#fff',
+            padding: '5px 12px',
+            borderRadius: '6px',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <Folder size={14} />
+          <span>이동 중: {activeDragInfo.name}</span>
+        </div>
+      )}
+
       {/* Sidebar Header Tabs */}
       <div style={{
         display: 'flex',
@@ -109,8 +647,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         background: 'rgba(0,0,0,0.15)'
       }}>
         <TabButton
-          active={activeTab === 'history'}
-          onClick={() => setActiveTab('history')}
+          active={activeTabType === 'history'}
+          onClick={() => setActiveTabType('history')}
           icon={<History size={16} />}
           label={`실행 이력 (${historyList.length})`}
           style={{
@@ -121,8 +659,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }}
         />
         <TabButton
-          active={activeTab === 'collections'}
-          onClick={() => setActiveTab('collections')}
+          active={activeTabType === 'collections'}
+          onClick={() => setActiveTabType('collections')}
           icon={<Bookmark size={16} />}
           label={`컬렉션 (${collectionList.length})`}
           style={{
@@ -135,7 +673,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* History List View */}
-      {activeTab === 'history' && (
+      {activeTabType === 'history' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{
             padding: '10px 14px',
@@ -254,7 +792,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Collections Folder Tree View */}
-      {activeTab === 'collections' && (
+      {activeTabType === 'collections' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {!user && (
             <div style={{
@@ -317,305 +855,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }
               />
             ) : (
-              collectionList.map((colGroup) => {
-                const isExpanded = expandedFolders[colGroup.id] !== false; // Default expanded
-                const items = colGroup.items || [];
-                const isConfigSelected = activeConfigCollectionId === colGroup.id;
+              <>
+                {renderFolderTree(null, 0)}
 
-                return (
-                  <div
-                    key={colGroup.id}
+                {dropTargetInfo?.id === 'root' && (
+                  <hr
                     style={{
-                      marginBottom: '8px',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      background: 'rgba(99, 102, 241, 0.03)'
+                      border: 'none',
+                      height: '3px',
+                      background: '#6366f1',
+                      margin: '6px 0',
+                      borderRadius: '2px',
                     }}
-                  >
-                    {/* Folder Header */}
-                    <div
-                      onClick={() => onOpenCollectionConfig(colGroup)}
-                      title="클릭 시 컬렉션 공통 설정(변수/헤더) 열기"
-                      style={{
-                        padding: '10px 12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        background: isConfigSelected ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255,255,255,0.03)',
-                        border: isConfigSelected ? '1px solid var(--accent-primary)' : 'none',
-                        borderBottom: isExpanded && items.length > 0 ? '1px solid var(--border-color)' : 'none',
-                        transition: 'background 0.15s ease'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isConfigSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isConfigSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                        {/* 1. Grouped Fold/Expand Toggle Button (Arrow + Folder Icon) */}
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFolder(colGroup.id);
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            cursor: 'pointer',
-                            padding: '2px 4px',
-                            borderRadius: '4px',
-                            background: 'rgba(255,255,255,0.05)'
-                          }}
-                          title={isExpanded ? '폴더 접기' : '폴더 펼치기'}
-                        >
-                          {isExpanded ? <ChevronDown size={15} color="var(--accent-primary)" /> : <ChevronRight size={15} color="var(--text-subtle)" />}
-                          <Folder size={16} color="var(--accent-primary)" />
-                        </div>
+                  />
+                )}
 
-                        {/* 2. Inline Name Editor on Hover / Click */}
-                        {editingFolderId === colGroup.id ? (
-                          <input
-                            type="text"
-                            value={editingFolderName}
-                            onChange={(e) => setEditingFolderName(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleFinishRename(colGroup.id, colGroup.name);
-                              if (e.key === 'Escape') setEditingFolderId(null);
-                            }}
-                            onBlur={() => handleFinishRename(colGroup.id, colGroup.name)}
-                            autoFocus
-                            style={{
-                              background: '#0d1117',
-                              border: '1px solid var(--accent-primary)',
-                              color: '#fff',
-                              fontSize: '0.85rem',
-                              fontWeight: 700,
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              outline: 'none',
-                              width: '120px'
-                            }}
-                          />
-                        ) : (
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingFolderId(colGroup.id);
-                              setEditingFolderName(colGroup.name);
-                            }}
-                            onMouseEnter={() => setHoveredFolderId(colGroup.id)}
-                            onMouseLeave={() => setHoveredFolderId(null)}
-                            style={{
-                              fontWeight: 700,
-                              fontSize: '0.85rem',
-                              color: '#fff',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              borderBottom: hoveredFolderId === colGroup.id ? '1px dashed var(--accent-primary)' : '1px solid transparent',
-                              transition: 'all 0.15s ease'
-                            }}
-                            title="클릭하여 컬렉션 이름 수정"
-                          >
-                            {colGroup.name}
-                            <Pencil
-                              size={12}
-                              style={{
-                                opacity: hoveredFolderId === colGroup.id ? 1 : 0,
-                                transition: 'opacity 0.15s ease',
-                                color: 'var(--accent-primary)'
-                              }}
-                            />
-                          </span>
-                        )}
-
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)' }}>
-                          ({items.length})
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        {/* Add API Request to Collection Button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onAddRequestToCollection) {
-                              onAddRequestToCollection(colGroup);
-                            }
-                          }}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--accent-primary)',
-                            cursor: 'pointer',
-                            padding: '4px',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}
-                          title="이 폴더에 새 API 요청 추가"
-                        >
-                          <Plus size={15} />
-                        </button>
-
-                        {/* Delete Folder Button */}
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const confirmed = await DAlert.confirmAsync(`'${colGroup.name}' 컬렉션 폴더 및 하위 요청 항목을 삭제하시겠습니까?`, {
-                              title: '컬렉션 폴더 삭제',
-                              type: 'error',
-                            });
-                            if (confirmed) {
-                              onDeleteCollectionGroup(colGroup.id);
-                            }
-                          }}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-subtle)',
-                            cursor: 'pointer',
-                            padding: '4px'
-                          }}
-                          title="컬렉션 폴더 삭제"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Child Request Items */}
-                    {isExpanded && (
-                      <div style={{ padding: '4px 6px 6px 12px' }}>
-                        {items.length === 0 ? (
-                          <div style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-subtle)', fontStyle: 'italic' }}>
-                            하위 요청 항목이 없습니다.
-                          </div>
-                        ) : (
-                          items.map((reqItem) => {
-                            const isItemSelected = activeCollectionItemId === reqItem.id;
-                            return (
-                              <div
-                                key={reqItem.id}
-                                onClick={() => onSelectCollectionItem(reqItem, colGroup)}
-                                style={{
-                                  padding: '8px 10px',
-                                  borderRadius: '6px',
-                                  marginTop: '4px',
-                                  background: isItemSelected ? 'rgba(99, 102, 241, 0.28)' : 'rgba(0,0,0,0.2)',
-                                  border: isItemSelected ? '1px solid var(--accent-primary)' : '1px solid rgba(255,255,255,0.05)',
-                                  boxShadow: isItemSelected ? '0 0 10px rgba(99, 102, 241, 0.3)' : 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  fontSize: '0.8rem',
-                                  transition: 'all 0.15s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!isItemSelected) e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!isItemSelected) e.currentTarget.style.background = 'rgba(0,0,0,0.2)';
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                                  <MethodBadge method={reqItem.method} fontSize="0.68rem" padding="2px 6px" />
-                                  {editingItemId === reqItem.id ? (
-                                    <input
-                                      type="text"
-                                      value={editingItemName}
-                                      onChange={(e) => setEditingItemName(e.target.value)}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleFinishRenameItem(reqItem.id, reqItem.name);
-                                        if (e.key === 'Escape') setEditingItemId(null);
-                                      }}
-                                      onBlur={() => handleFinishRenameItem(reqItem.id, reqItem.name)}
-                                      autoFocus
-                                      style={{
-                                        background: '#0d1117',
-                                        border: '1px solid var(--accent-primary)',
-                                        color: '#fff',
-                                        fontSize: '0.8rem',
-                                        fontWeight: 600,
-                                        padding: '1px 5px',
-                                        borderRadius: '4px',
-                                        outline: 'none',
-                                        width: '110px'
-                                      }}
-                                    />
-                                  ) : (
-                                    <span
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setEditingItemId(reqItem.id);
-                                        setEditingItemName(reqItem.name);
-                                      }}
-                                      onMouseEnter={() => setHoveredItemId(reqItem.id)}
-                                      onMouseLeave={() => setHoveredItemId(null)}
-                                      style={{
-                                        color: 'var(--text-main)',
-                                        fontWeight: 600,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        cursor: 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        borderBottom: hoveredItemId === reqItem.id ? '1px dashed var(--accent-primary)' : '1px solid transparent',
-                                        transition: 'all 0.15s ease'
-                                      }}
-                                      title="클릭하여 요청 이름 수정"
-                                    >
-                                      {reqItem.name}
-                                      <Pencil
-                                        size={11}
-                                        style={{
-                                          opacity: hoveredItemId === reqItem.id ? 1 : 0,
-                                          transition: 'opacity 0.15s ease',
-                                          color: 'var(--accent-primary)',
-                                          flexShrink: 0
-                                        }}
-                                      />
-                                    </span>
-                                  )}
-                                </div>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDeleteCollectionItem(reqItem.id);
-                                  }}
-                                  style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: 'var(--text-subtle)',
-                                    cursor: 'pointer',
-                                    padding: '2px'
-                                  }}
-                                  title="요청 항목 삭제"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+              </>
             )}
           </div>
         </div>
@@ -623,3 +878,5 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
+
+

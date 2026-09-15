@@ -54,6 +54,7 @@ export interface CollectionRequestItem {
 export interface CollectionGroup {
   id: string;
   name: string;
+  parentId?: string | null;
   description?: string;
   variables: KeyValueItem[];
   headers: KeyValueItem[];

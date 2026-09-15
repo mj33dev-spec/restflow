@@ -1,29 +1,75 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, Braces, Layers, Save, CheckCircle, AlertCircle } from 'lucide-react';
+import { Folder, Braces, Layers, Save, CheckCircle, AlertCircle, Link } from 'lucide-react';
 import { CollectionGroup, KeyValueItem } from '../types';
 import { KeyValueEditor } from './KeyValueEditor';
 import { TabButton } from './common/TabButton';
 import { DLoading } from '../services/DLoading';
+import { getRootCollectionId } from '../services/apiService';
 
 interface CollectionConfigPanelProps {
   collection: CollectionGroup;
+  allCollections?: CollectionGroup[];
   onSaveConfig: (collectionId: string, variables: KeyValueItem[], headers: KeyValueItem[]) => Promise<void>;
 }
 
+const ensureBaseVar = (vars: KeyValueItem[] = []) => {
+  const hasBase = (vars || []).some((v) => v && v.key && v.key.trim().toLowerCase() === 'base');
+  if (!hasBase) {
+    return [{ id: 'var-default-base', key: 'base', value: 'http://localhost:3000', enabled: true }, ...(vars || [])];
+  }
+  return vars;
+};
+
 export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
   collection,
+  allCollections = [],
   onSaveConfig,
 }) => {
-  const [activeTab, setActiveTab] = useState<'variables' | 'headers'>('variables');
-  const [variables, setVariables] = useState<KeyValueItem[]>(collection.variables || []);
-  const [headers, setHeaders] = useState<KeyValueItem[]>(collection.headers || []);
+  // Resolve effective root collection for variables and headers if nested under a parent
+  const getEffectiveCol = () => {
+    if (collection.parentId && allCollections.length > 0) {
+      const rootId = getRootCollectionId(collection.id, allCollections);
+      const rootCol = allCollections.find((c) => c.id === rootId);
+      if (rootCol) return rootCol;
+    }
+    return collection;
+  };
+
+  const effectiveCol = getEffectiveCol();
+
+  // Common Headers on left (first), Common Variables on right (second)
+  const [activeTab, setActiveTab] = useState<'headers' | 'variables'>('headers');
+  const [variables, setVariables] = useState<KeyValueItem[]>(ensureBaseVar(effectiveCol.variables));
+  const [headers, setHeaders] = useState<KeyValueItem[]>(effectiveCol.headers || []);
   const [isSaved, setIsSaved] = useState<boolean>(false);
 
   useEffect(() => {
-    setVariables(collection.variables || []);
-    setHeaders(collection.headers || []);
+    const eff = getEffectiveCol();
+    setVariables(ensureBaseVar(eff.variables));
+    setHeaders(eff.headers || []);
     setIsSaved(false);
-  }, [collection]);
+  }, [collection, allCollections]);
+
+  // Compute parent hierarchy path if this collection is a sub-folder
+  const getParentPath = (): string => {
+    if (!collection.parentId || !allCollections.length) return '';
+    const chain: string[] = [];
+    let curr = allCollections.find(c => c.id === collection.parentId);
+    const visited = new Set<string>();
+
+    while (curr && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      chain.unshift(curr.name);
+      if (curr.parentId) {
+        curr = allCollections.find(c => c.id === curr!.parentId);
+      } else {
+        break;
+      }
+    }
+    return chain.join(' > ');
+  };
+
+  const parentPath = getParentPath();
 
   const handleVariablesChange = (newVars: KeyValueItem[]) => {
     setVariables(newVars);
@@ -84,7 +130,7 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
               {collection.name} <span style={{ fontSize: '0.8rem', color: 'var(--text-subtle)', fontWeight: 400 }}>(컬렉션 공통 설정)</span>
             </h2>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-              이 컬렉션 하위의 모든 API 요청에 자동으로 적용될 공통 변수 및 공통 헤더(Auth 토큰 등)를 설정합니다.
+              이 컬렉션 및 하위 폴더의 모든 API 요청에 자동으로 적용될 공통 헤더 및 변수를 설정합니다.
             </p>
           </div>
         </div>
@@ -106,21 +152,13 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
         </button>
       </div>
 
-      {/* Sub Tabs */}
+      {/* Sub Tabs: Headers (Left) & Variables (Right) */}
       <div style={{
         display: 'flex',
         borderBottom: '1px solid var(--border-color)',
         background: 'rgba(0,0,0,0.15)',
         padding: '0 16px'
       }}>
-        <TabButton
-          active={activeTab === 'variables'}
-          onClick={() => setActiveTab('variables')}
-          icon={<Braces size={15} />}
-          label="공통 변수 (Variables)"
-          badge={variables.filter(v => v.enabled && v.key).length}
-          style={{ padding: '12px 18px', fontSize: '0.85rem' }}
-        />
         <TabButton
           active={activeTab === 'headers'}
           onClick={() => setActiveTab('headers')}
@@ -129,7 +167,34 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
           badge={headers.filter(h => h.enabled && h.key).length}
           style={{ padding: '12px 18px', fontSize: '0.85rem' }}
         />
+        <TabButton
+          active={activeTab === 'variables'}
+          onClick={() => setActiveTab('variables')}
+          icon={<Braces size={15} />}
+          label="공통 변수 (Variables)"
+          badge={variables.filter(v => v.enabled && v.key).length}
+          style={{ padding: '12px 18px', fontSize: '0.85rem' }}
+        />
       </div>
+
+      {/* Parent Hierarchy Inheritance Notice Banner */}
+      {parentPath && (
+        <div style={{
+          padding: '9px 24px',
+          background: 'rgba(59, 130, 246, 0.1)',
+          borderBottom: '1px solid rgba(59, 130, 246, 0.2)',
+          color: '#60a5fa',
+          fontSize: '0.78rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <Link size={15} />
+          <span>
+            🔗 <strong>상위 그룹 연동 상속:</strong> 이 폴더는 상위 컬렉션 (<strong>{parentPath}</strong>)의 공통 헤더 및 변수와 자동 연동·상속됩니다.
+          </span>
+        </div>
+      )}
 
       {/* Inheritance Notice Banner */}
       <div style={{
@@ -144,12 +209,26 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
       }}>
         <AlertCircle size={15} />
         <span>
-          💡 <strong>자동 실시간 상속:</strong> 작성하신 공통 변수 및 헤더는 하위 모든 API 요청 시트에 실시간으로 즉시 공유 적용됩니다.
+          💡 <strong>자동 실시간 계층 상속:</strong> 이 컬렉션에 설정한 공통 헤더 및 변수는 모든 하위 폴더와 API 요청 시트에 실시간으로 계층 연동되어 자동 적용됩니다.
         </span>
       </div>
 
       {/* Main Content Area */}
       <div style={{ flex: 1, padding: '16px 24px', overflowY: 'auto' }}>
+        {activeTab === 'headers' && (
+          <div>
+            <h3 style={{ fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '12px', fontWeight: 600 }}>
+              컬렉션 공통 헤더 목록 (Authorization / Bearer 토큰 등)
+            </h3>
+            <KeyValueEditor
+              items={headers}
+              onChange={handleHeadersChange}
+              keyPlaceholder="공통 헤더명 (예: Authorization)"
+              valuePlaceholder="헤더 값 (예: Bearer {{token}})"
+            />
+          </div>
+        )}
+
         {activeTab === 'variables' && (
           <div>
             <h3 style={{ fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '12px', fontWeight: 600 }}>
@@ -160,20 +239,6 @@ export const CollectionConfigPanel: React.FC<CollectionConfigPanelProps> = ({
               onChange={handleVariablesChange}
               keyPlaceholder="공통 변수명 (예: baseUrl)"
               valuePlaceholder="변수 값 (예: https://api.example.com)"
-            />
-          </div>
-        )}
-
-        {activeTab === 'headers' && (
-          <div>
-            <h3 style={{ fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '12px', fontWeight: 600 }}>
-              컬렉션 공통 헤더 목록 (Authorization / Bearer 토큰 등)
-            </h3>
-            <KeyValueEditor
-              items={headers}
-              onChange={handleHeadersChange}
-              keyPlaceholder="헤더 이름 (예: Authorization)"
-              valuePlaceholder="헤더 값 (예: Bearer {{token}})"
             />
           </div>
         )}

@@ -43,14 +43,25 @@ import {
   signUpWithEmail,
   fetchUserSettings,
   saveUserSettings,
+  updateCollectionGroupParentApi,
+  getTreeFamilyCollectionIds,
+  getRootCollectionId,
+  saveStoredLocalCollections,
 } from './services/apiService';
 
 const createDefaultRequest = (): RequestState => ({
   method: 'GET',
-  url: '',
+  url: '{{base}}/api',
   params: [],
   headers: [],
-  variables: [],
+  variables: [
+    {
+      id: 'var-default-base',
+      key: 'base',
+      value: 'http://localhost:3000',
+      enabled: true,
+    },
+  ],
   bodyType: 'json',
   body: '',
 });
@@ -62,6 +73,30 @@ const createInitialTab = (id = 'tab-1', title = '요청 1'): ApiTab => ({
   response: null,
   activeCollection: null,
 });
+
+const reorderCollectionsList = (
+  list: CollectionGroup[],
+  movedId: string,
+  newParentId: string | null,
+  targetBeforeId?: string | null
+): CollectionGroup[] => {
+  const movedItem = list.find((c) => c.id === movedId);
+  if (!movedItem) return list;
+
+  const updatedMovedItem = { ...movedItem, parentId: newParentId };
+  const listWithoutMoved = list.filter((c) => c.id !== movedId);
+
+  if (targetBeforeId) {
+    const targetIdx = listWithoutMoved.findIndex((c) => c.id === targetBeforeId);
+    if (targetIdx !== -1) {
+      const newList = [...listWithoutMoved];
+      newList.splice(targetIdx, 0, updatedMovedItem);
+      return newList;
+    }
+  }
+
+  return [...listWithoutMoved, updatedMovedItem];
+};
 
 export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -90,7 +125,7 @@ export const App: React.FC = () => {
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
 
   const [configCollectionModalTarget, setConfigCollectionModalTarget] = useState<CollectionGroup | null>(null);
-  const [configActiveTab, setConfigActiveTab] = useState<'variables' | 'headers'>('variables');
+  const [configActiveTab, setConfigActiveTab] = useState<'headers' | 'variables'>('headers');
   const [configVariables, setConfigVariables] = useState<KeyValueItem[]>([]);
   const [configHeaders, setConfigHeaders] = useState<KeyValueItem[]>([]);
 
@@ -101,6 +136,7 @@ export const App: React.FC = () => {
   const [isDraggingBody, setIsDraggingBody] = useState<boolean>(false);
 
   const mainContainerRef = React.useRef<HTMLElement | null>(null);
+  const splitAreaRef = React.useRef<HTMLDivElement | null>(null);
 
   // Active Tab Helper
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0] || createInitialTab();
@@ -120,7 +156,47 @@ export const App: React.FC = () => {
         newTitle = `${newReq.method} ${pathPart || newReq.url}`;
       }
     }
-    updateActiveTab({ request: newReq, title: newTitle });
+    
+    const updatedTab = { ...activeTab, request: newReq, title: newTitle };
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeTab.id ? updatedTab : t))
+    );
+
+    saveUserSettings({
+      sidebarWidth,
+      requestPanelHeight,
+      tabs: tabs.map((t) => (t.id === activeTab.id ? updatedTab : t)),
+      activeTabId,
+    });
+
+    if (activeTab.collectionItemId) {
+      const itemIdStr = String(activeTab.collectionItemId);
+      setCollections((prev) =>
+        prev.map((col) => ({
+          ...col,
+          items: (col.items || []).map((it) =>
+            String(it.id) === itemIdStr
+              ? {
+                  ...it,
+                  method: newReq.method,
+                  url: newReq.url,
+                  params: newReq.params,
+                  headers: newReq.headers,
+                  body: newReq.body,
+                }
+              : it
+          ),
+        }))
+      );
+
+      updateCollectionRequestItemApi(itemIdStr, {
+        method: newReq.method,
+        url: newReq.url,
+        params: newReq.params,
+        headers: newReq.headers,
+        body: newReq.body,
+      });
+    }
   };
 
   const handleCreateTab = (customReq?: RequestState, customTitle?: string, collection?: CollectionGroup | null) => {
@@ -300,11 +376,11 @@ export const App: React.FC = () => {
 
     let finalPercent = requestPanelHeight;
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!mainContainerRef.current) return;
-      const rect = mainContainerRef.current.getBoundingClientRect();
+      if (!splitAreaRef.current) return;
+      const rect = splitAreaRef.current.getBoundingClientRect();
       const offsetY = moveEvent.clientY - rect.top;
       const percent = (offsetY / rect.height) * 100;
-      finalPercent = Math.min(Math.max(percent, 20), 80);
+      finalPercent = Math.min(Math.max(percent, 15), 85);
       setRequestPanelHeight(finalPercent);
     };
 
@@ -641,10 +717,57 @@ export const App: React.FC = () => {
 
   const handleDeleteCollectionGroup = async (id: string) => {
     await deleteCollectionGroupApi(id);
-    setCollections((prev) => prev.filter((c) => c.id !== id));
-    setTabs((prev) =>
-      prev.map((t) => (t.activeCollection?.id === id ? { ...t, activeCollection: null } : t))
-    );
+
+    const targetIdStr = String(id);
+    const subtreeIds = new Set<string>();
+
+    const collectSubtree = (folderId: string) => {
+      const fStr = String(folderId);
+      subtreeIds.add(fStr);
+      collections.forEach((col) => {
+        if (col.parentId && String(col.parentId) === fStr && !subtreeIds.has(String(col.id))) {
+          collectSubtree(String(col.id));
+        }
+      });
+    };
+    collectSubtree(id);
+
+    // Get all item IDs under subtree folders
+    const deletedItemIds = new Set<string>();
+    collections
+      .filter((c) => subtreeIds.has(String(c.id)))
+      .forEach((c) => c.items?.forEach((it) => deletedItemIds.add(String(it.id))));
+
+    // Update collections state
+    const updatedCollections = collections.filter((c) => !subtreeIds.has(String(c.id)));
+    setCollections(updatedCollections);
+
+    // Filter out open tabs related to deleted folder, sub-folders, or deleted items
+    const remainingTabs = tabs.filter((t) => {
+      if (t.configCollectionId && subtreeIds.has(String(t.configCollectionId))) return false;
+      if (t.collectionItemId && deletedItemIds.has(String(t.collectionItemId))) return false;
+      if (t.activeCollection && subtreeIds.has(String(t.activeCollection.id))) return false;
+      if (t.id.includes(`tab-config-${targetIdStr}`)) return false;
+      for (const itemId of deletedItemIds) {
+        if (t.id.includes(itemId)) return false;
+      }
+      return true;
+    });
+
+    let newTabs = remainingTabs;
+    let newActiveId = activeTabId;
+
+    if (newTabs.length === 0) {
+      const defaultTab = createInitialTab('tab-1', '요청 1');
+      newTabs = [defaultTab];
+      newActiveId = defaultTab.id;
+    } else if (!newTabs.some((t) => t.id === activeTabId)) {
+      newActiveId = newTabs[newTabs.length - 1].id;
+    }
+
+    setTabs(newTabs);
+    setActiveTabId(newActiveId);
+    saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: newTabs, activeTabId: newActiveId });
   };
 
   const handleRenameCollectionGroup = async (id: string, newName: string) => {
@@ -665,7 +788,7 @@ export const App: React.FC = () => {
         if (isConfigTab || isActiveCollectionMatch) {
           return {
             ...t,
-            title: isConfigTab ? `📁 ${trimmed} 설정` : t.title,
+            title: isConfigTab ? `${trimmed}` : t.title,
             activeCollection: t.activeCollection
               ? { ...t.activeCollection, name: trimmed }
               : t.activeCollection,
@@ -683,7 +806,7 @@ export const App: React.FC = () => {
     const trimmed = newName.trim();
     let targetItem: CollectionRequestItem | null = null;
     for (const col of collections) {
-      const found = col.items?.find((i) => i.id === itemId);
+      const found = col.items?.find((i) => String(i.id) === String(itemId));
       if (found) {
         targetItem = found;
         break;
@@ -699,13 +822,13 @@ export const App: React.FC = () => {
         prev.map((col) => ({
           ...col,
           items: (col.items || []).map((it) =>
-            it.id === itemId ? { ...it, name: trimmed } : it
+            String(it.id) === String(itemId) ? { ...it, name: trimmed } : it
           ),
         }))
       );
       setTabs((prev) => {
         const updated = prev.map((t) =>
-          t.collectionItemId === itemId || (t.activeCollection && t.title === targetItem!.name)
+          String(t.collectionItemId) === String(itemId) || (t.activeCollection && t.title === targetItem!.name)
             ? { ...t, title: trimmed }
             : t
         );
@@ -719,13 +842,38 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteCollectionItem = async (id: string) => {
+    const targetIdStr = String(id);
     await deleteCollectionRequestItemApi(id);
+
+    // Update collections state
     setCollections((prev) =>
       prev.map((col) => ({
         ...col,
-        items: col.items.filter((item) => item.id !== id),
+        items: (col.items || []).filter((item) => String(item.id) !== targetIdStr),
       }))
     );
+
+    // Filter out open tabs related to deleted item
+    const remainingTabs = tabs.filter((t) => {
+      if (t.collectionItemId && String(t.collectionItemId) === targetIdStr) return false;
+      if (t.id.includes(targetIdStr)) return false;
+      return true;
+    });
+
+    let newTabs = remainingTabs;
+    let newActiveId = activeTabId;
+
+    if (newTabs.length === 0) {
+      const defaultTab = createInitialTab('tab-1', '요청 1');
+      newTabs = [defaultTab];
+      newActiveId = defaultTab.id;
+    } else if (!newTabs.some((t) => t.id === activeTabId)) {
+      newActiveId = newTabs[newTabs.length - 1].id;
+    }
+
+    setTabs(newTabs);
+    setActiveTabId(newActiveId);
+    saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: newTabs, activeTabId: newActiveId });
   };
 
   const handleAutoSaveActiveTabRequestItem = async () => {
@@ -747,17 +895,160 @@ export const App: React.FC = () => {
         items: (col.items || []).map((it) =>
           it.id === itemId
             ? {
-                ...it,
-                method: req.method,
-                url: req.url,
-                params: req.params,
-                headers: req.headers,
-                body: req.body,
-              }
+              ...it,
+              method: req.method,
+              url: req.url,
+              params: req.params,
+              headers: req.headers,
+              body: req.body,
+            }
             : it
         ),
       }))
     );
+  };
+
+  const handleMoveFolderToParent = async (
+    folderId: string,
+    parentId: string | null,
+    targetBeforeFolderId?: string | null
+  ) => {
+    if (folderId === parentId) return;
+
+    if (parentId) {
+      let curr = collections.find((c) => c.id === parentId);
+      const visited = new Set<string>();
+      while (curr && !visited.has(curr.id)) {
+        if (curr.id === folderId) {
+          DAlert.error('하위 폴더를 상위 폴더로 지정할 수 없습니다.', { title: '이동 불가' });
+          return;
+        }
+        visited.add(curr.id);
+        curr = collections.find((c) => c.id === curr!.parentId);
+      }
+    }
+
+    DLoading('컬렉션 위치 변경 중...');
+    const success = await updateCollectionGroupParentApi(folderId, parentId);
+    if (success) {
+      let rootVars: KeyValueItem[] | null = null;
+      let rootHeaders: KeyValueItem[] | null = null;
+
+      if (parentId) {
+        const rootId = getRootCollectionId(parentId, collections);
+        const rootCol = collections.find((c) => c.id === rootId);
+        if (rootCol) {
+          rootVars = rootCol.variables || [];
+          rootHeaders = rootCol.headers || [];
+        }
+      }
+
+      const familyIds = new Set(getTreeFamilyCollectionIds(folderId, collections));
+
+      const updatedCollections = collections.map((c) => {
+        if (c.id === folderId) {
+          return {
+            ...c,
+            parentId,
+            ...(rootVars ? { variables: rootVars } : {}),
+            ...(rootHeaders ? { headers: rootHeaders } : {}),
+          };
+        }
+        if (familyIds.has(c.id) && rootVars && rootHeaders) {
+          return {
+            ...c,
+            variables: rootVars,
+            headers: rootHeaders,
+          };
+        }
+        return c;
+      });
+
+      const reorderedCollections = reorderCollectionsList(
+        updatedCollections,
+        folderId,
+        parentId,
+        targetBeforeFolderId
+      );
+
+      setCollections(reorderedCollections);
+      saveStoredLocalCollections(reorderedCollections);
+
+      if (rootVars && rootHeaders) {
+        await updateCollectionGroupConfig(folderId, rootVars, rootHeaders, reorderedCollections);
+      }
+
+      setTabs((prev) =>
+        prev.map((t) => {
+          const matchColId = t.configCollectionId || t.activeCollection?.id;
+          if (matchColId && (familyIds.has(matchColId) || matchColId === folderId) && rootVars && rootHeaders) {
+            return {
+              ...t,
+              activeCollection: t.activeCollection
+                ? { ...t.activeCollection, variables: rootVars, headers: rootHeaders }
+                : t.activeCollection,
+            };
+          }
+          return t;
+        })
+      );
+
+      DLoading.dismiss('컬렉션 위치가 변경되었습니다!');
+    } else {
+      DLoading.dismiss('컬렉션 이동 실패');
+    }
+  };
+
+  const handleMoveItemToFolder = async (
+    itemId: string,
+    targetFolderId: string,
+    targetBeforeItemId?: string | null
+  ) => {
+    DLoading('요청 항목 위치 이동 중...');
+    try {
+      await updateCollectionRequestItemApi(itemId, { collectionId: targetFolderId });
+
+      setCollections((prev) => {
+        let itemToMove: CollectionRequestItem | null = null;
+        const cleanCols = prev.map((col) => {
+          const found = (col.items || []).find((it) => String(it.id) === String(itemId));
+          if (found) {
+            itemToMove = { ...found, collectionId: targetFolderId };
+            return {
+              ...col,
+              items: (col.items || []).filter((it) => String(it.id) !== String(itemId)),
+            };
+          }
+          return col;
+        });
+
+        if (!itemToMove) return prev;
+
+        const resultCols = cleanCols.map((col) => {
+          if (String(col.id) === String(targetFolderId)) {
+            const currentItems = [...(col.items || [])];
+            if (targetBeforeItemId) {
+              const targetIdx = currentItems.findIndex(
+                (it) => String(it.id) === String(targetBeforeItemId)
+              );
+              if (targetIdx !== -1) {
+                currentItems.splice(targetIdx, 0, itemToMove!);
+                return { ...col, items: currentItems };
+              }
+            }
+            currentItems.push(itemToMove!);
+            return { ...col, items: currentItems };
+          }
+          return col;
+        });
+
+        saveStoredLocalCollections(resultCols);
+        return resultCols;
+      });
+      DLoading.dismiss('요청 항목이 이동되었습니다!');
+    } catch (e) {
+      DLoading.dismiss('요청 항목 이동 실패');
+    }
   };
 
   const handleSaveCollectionConfigConfirm = async () => {
@@ -766,17 +1057,22 @@ export const App: React.FC = () => {
     await updateCollectionGroupConfig(
       configCollectionModalTarget.id,
       configVariables,
-      configHeaders
+      configHeaders,
+      collections
     );
+
+    const familyIds = getTreeFamilyCollectionIds(configCollectionModalTarget.id, collections);
+    const familySet = new Set(familyIds);
+
     setCollections((prev) =>
       prev.map((col) =>
-        col.id === configCollectionModalTarget.id ? { ...col, variables: configVariables, headers: configHeaders } : col
+        familySet.has(col.id) ? { ...col, variables: configVariables, headers: configHeaders } : col
       )
     );
     setTabs((prev) =>
       prev.map((t) =>
-        t.activeCollection?.id === configCollectionModalTarget.id
-          ? { ...t, activeCollection: { ...t.activeCollection!, variables: configVariables, headers: configHeaders } }
+        t.activeCollection && familySet.has(t.activeCollection.id)
+          ? { ...t, activeCollection: { ...t.activeCollection, variables: configVariables, headers: configHeaders } }
           : t
       )
     );
@@ -794,7 +1090,7 @@ export const App: React.FC = () => {
     const newTabId = `tab-config-${colGroup.id}`;
     const newTab: ApiTab = {
       id: newTabId,
-      title: `📁 ${colGroup.name} 설정`,
+      title: `${colGroup.name}`,
       request: createDefaultRequest(),
       response: null,
       activeCollection: colGroup,
@@ -812,36 +1108,34 @@ export const App: React.FC = () => {
     variables: KeyValueItem[],
     headers: KeyValueItem[]
   ) => {
-    await updateCollectionGroupConfig(collectionId, variables, headers);
+    await updateCollectionGroupConfig(collectionId, variables, headers, collections);
+
+    const familyIds = getTreeFamilyCollectionIds(collectionId, collections);
+    const familySet = new Set(familyIds);
+
     setCollections((prev) =>
       prev.map((col) =>
-        col.id === collectionId ? { ...col, variables, headers } : col
+        familySet.has(col.id) ? { ...col, variables, headers } : col
       )
     );
     setTabs((prev) =>
       prev.map((t) =>
-        t.activeCollection?.id === collectionId
-          ? { ...t, activeCollection: { ...t.activeCollection!, variables, headers } }
+        t.activeCollection && familySet.has(t.activeCollection.id)
+          ? { ...t, activeCollection: { ...t.activeCollection, variables, headers } }
           : t
       )
     );
   };
 
   const handleAddRequestToCollection = async (colGroup: CollectionGroup) => {
-    const reqName = await DAlert.promptAsync(`'${colGroup.name}' 폴더에 추가할 새 API 요청 이름을 입력하세요:`, {
-      title: '새 API 요청 생성',
-      promptPlaceholder: '예: 회원가입 API 요청',
-      promptDefaultValue: '새 API 요청',
-      type: 'info',
-    });
-    if (!reqName || !reqName.trim()) return;
+    const defaultName = `새 API 요청 ${(colGroup.items || []).length + 1}`;
 
     DLoading('컬렉션에 새 API 요청 생성 중...');
     const savedItem = await saveCollectionRequestItem({
       collectionId: colGroup.id,
-      name: reqName.trim(),
+      name: defaultName,
       method: 'GET',
-      url: '',
+      url: '{{base}}/api',
       params: [],
       headers: [],
       body: '',
@@ -853,7 +1147,6 @@ export const App: React.FC = () => {
           c.id === colGroup.id ? { ...c, items: [...(c.items || []), savedItem] } : c
         )
       );
-      // Open newly created request in right main panel tab
       handleSelectCollectionItem(savedItem, colGroup);
       DLoading.dismiss('새 API 요청이 생성되었습니다!');
     } else {
@@ -862,15 +1155,10 @@ export const App: React.FC = () => {
   };
 
   const handleCreateFolderDirectly = async () => {
-    const name = await DAlert.promptAsync('새 컬렉션 폴더 이름을 입력하세요:', {
-      title: '새 컬렉션 폴더 생성',
-      promptPlaceholder: '예: 쇼핑몰 API 프로젝트',
-      type: 'info',
-    });
-    if (!name || !name.trim()) return;
+    const defaultFolderName = `새 컬렉션 폴더 ${collections.length + 1}`;
 
     DLoading('새 컬렉션 폴더 생성 중...');
-    const newFolder = await createCollectionGroup({ name: name.trim() });
+    const newFolder = await createCollectionGroup({ name: defaultFolderName });
     if (newFolder) {
       setCollections((prev) => [newFolder, ...prev]);
       DLoading.dismiss('컬렉션 폴더가 생성되었습니다!');
@@ -911,6 +1199,8 @@ export const App: React.FC = () => {
           onRenameCollectionGroup={handleRenameCollectionGroup}
           onRenameCollectionItem={handleRenameCollectionItem}
           onAddRequestToCollection={handleAddRequestToCollection}
+          onMoveFolderToParent={handleMoveFolderToParent}
+          onMoveItemToFolder={handleMoveItemToFolder}
           user={user}
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onCreateFolderClick={handleCreateFolderDirectly}
@@ -943,17 +1233,27 @@ export const App: React.FC = () => {
                 collections.find((c) => c.id === activeTab.configCollectionId) ||
                 activeTab.activeCollection || {
                   id: activeTab.configCollectionId || '',
-                  name: activeTab.title.replace('📁 ', '').replace(' 설정', ''),
+                  name: activeTab.title.replace('', '').replace('', ''),
                   variables: [],
                   headers: [],
                   items: [],
                   timestamp: new Date().toISOString(),
                 }
               }
+              allCollections={collections}
               onSaveConfig={handleSaveCollectionConfigDirect}
             />
           ) : (
-            <>
+            <div
+              ref={splitAreaRef}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                position: 'relative',
+              }}
+            >
               {/* Active Collection Inheritance Status Bar */}
               {activeTab.activeCollection && (
                 <div style={{
@@ -1001,7 +1301,7 @@ export const App: React.FC = () => {
 
               {/* Middle Panel: Response Panel */}
               <ResponsePanel response={activeTab.response} isLoading={isLoading} />
-            </>
+            </div>
           )}
 
           {/* Bottom Panel Frame: Excel Spreadsheet Sheet Tab Bar */}
@@ -1278,19 +1578,19 @@ export const App: React.FC = () => {
         subHeader={
           <div style={{ display: 'flex', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
             <TabButton
-              active={configActiveTab === 'variables'}
-              onClick={() => setConfigActiveTab('variables')}
-              icon={<Braces size={14} />}
-              label="공통 변수 (Variables)"
-              badge={configVariables.filter((v) => v.enabled && v.key).length}
-              style={{ flex: 1, padding: '10px', justifyContent: 'center', borderRadius: 0 }}
-            />
-            <TabButton
               active={configActiveTab === 'headers'}
               onClick={() => setConfigActiveTab('headers')}
               icon={<Layers size={14} />}
               label="공통 헤더 (Headers / Auth)"
               badge={configHeaders.filter((h) => h.enabled && h.key).length}
+              style={{ flex: 1, padding: '10px', justifyContent: 'center', borderRadius: 0 }}
+            />
+            <TabButton
+              active={configActiveTab === 'variables'}
+              onClick={() => setConfigActiveTab('variables')}
+              icon={<Braces size={14} />}
+              label="공통 변수 (Variables)"
+              badge={configVariables.filter((v) => v.enabled && v.key).length}
               style={{ flex: 1, padding: '10px', justifyContent: 'center', borderRadius: 0 }}
             />
           </div>
@@ -1309,21 +1609,21 @@ export const App: React.FC = () => {
         }
         body={
           <div style={{ minHeight: '220px' }}>
-            {configActiveTab === 'variables' && (
-              <KeyValueEditor
-                items={configVariables}
-                onChange={setConfigVariables}
-                keyPlaceholder="공통 변수명 (예: baseUrl)"
-                valuePlaceholder="변수 값 (예: https://api.example.com 또는 http://localhost:포트)"
-              />
-            )}
-
             {configActiveTab === 'headers' && (
               <KeyValueEditor
                 items={configHeaders}
                 onChange={setConfigHeaders}
                 keyPlaceholder="공통 헤더명 (예: Authorization)"
                 valuePlaceholder="헤더 값 (예: Bearer token...)"
+              />
+            )}
+
+            {configActiveTab === 'variables' && (
+              <KeyValueEditor
+                items={configVariables}
+                onChange={setConfigVariables}
+                keyPlaceholder="공통 변수명 (예: baseUrl)"
+                valuePlaceholder="변수 값 (예: https://api.example.com 또는 http://localhost:포트)"
               />
             )}
           </div>

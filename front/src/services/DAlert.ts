@@ -90,7 +90,7 @@ export const DAlert = Object.assign(
     confirm: (message: string, onConfirm?: () => void, options?: DAlertOptions) =>
       DAlert(message, {
         ...options,
-        buttonType: 'okCancel',
+        buttonType: options?.buttonType || 'yesNo',
         type: options?.type || 'warn',
         onConfirm,
       }),
@@ -99,7 +99,7 @@ export const DAlert = Object.assign(
       return new Promise((resolve) => {
         DAlert(message, {
           ...options,
-          buttonType: 'okCancel',
+          buttonType: options?.buttonType || 'yesNo',
           type: options?.type || 'warn',
           onConfirm: () => resolve(true),
           onCancel: () => resolve(false),

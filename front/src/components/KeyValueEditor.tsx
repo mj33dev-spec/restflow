@@ -10,31 +10,52 @@ interface KeyValueEditorProps {
 }
 
 export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
-  items,
+  items = [],
   onChange,
   keyPlaceholder = '키 (Key)',
   valuePlaceholder = '값 (Value)',
 }) => {
+  // Always pad displayItems to have at least 5 rows in UI
+  const displayItems = [...(items || [])];
+  while (displayItems.length < 5) {
+    displayItems.push({
+      id: `kv-blank-${displayItems.length}-${Math.random().toString(36).substring(2, 6)}`,
+      key: '',
+      value: '',
+      enabled: true,
+    });
+  }
+
   const handleToggle = (id: string) => {
-    onChange(
-      items.map(item => (item.id === id ? { ...item, enabled: !item.enabled } : item))
+    const updated = displayItems.map((item) =>
+      item.id === id ? { ...item, enabled: !item.enabled } : item
     );
+    onChange(updated);
   };
 
   const handleUpdate = (id: string, field: 'key' | 'value', value: string) => {
-    onChange(
-      items.map(item => (item.id === id ? { ...item, [field]: value } : item))
+    const updated = displayItems.map((item) =>
+      item.id === id ? { ...item, [field]: value } : item
     );
+    onChange(updated);
   };
 
   const handleDelete = (id: string) => {
-    onChange(items.filter(item => item.id !== id));
+    if (displayItems.length > 5) {
+      onChange(displayItems.filter((item) => item.id !== id));
+    } else {
+      onChange(
+        displayItems.map((item) =>
+          item.id === id ? { ...item, key: '', value: '', enabled: true } : item
+        )
+      );
+    }
   };
 
   const handleAddRow = () => {
     onChange([
-      ...items,
-      { id: 'kv-' + Date.now() + Math.random(), key: '', value: '', enabled: true },
+      ...displayItems,
+      { id: 'kv-' + Date.now() + Math.random().toString(36).substring(2, 6), key: '', value: '', enabled: true },
     ]);
   };
 
@@ -50,7 +71,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
+          {displayItems.map((item) => (
             <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <td style={{ textAlign: 'center', padding: '6px' }}>
                 <input
@@ -106,7 +127,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
                     cursor: 'pointer',
                     padding: '4px'
                   }}
-                  title="항목 삭제"
+                  title="항목 초기화 / 삭제"
                 >
                   <Trash2 size={15} />
                 </button>
