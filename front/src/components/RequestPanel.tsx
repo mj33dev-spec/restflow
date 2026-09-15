@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Send, Code, Sliders, Layers, Sparkles, BookmarkPlus, Braces } from 'lucide-react';
-import { RequestState, HttpMethod } from '../types';
+import { Send, Code, Sliders, Layers, Sparkles, Braces } from 'lucide-react';
+import { RequestState, HttpMethod, CollectionGroup, KeyValueItem } from '../types';
 import { KeyValueEditor } from './KeyValueEditor';
 import { TabButton } from './common/TabButton';
 import { MethodBadge } from './common/MethodBadge';
@@ -13,6 +13,9 @@ interface RequestPanelProps {
   onSend: () => void;
   isLoading: boolean;
   onOpenSaveCollection: () => void;
+  activeCollection?: CollectionGroup | null;
+  onUpdateCollectionConfig?: (collectionId: string, variables: KeyValueItem[], headers: KeyValueItem[]) => void;
+  onBlurUrl?: () => void;
 }
 
 export const RequestPanel: React.FC<RequestPanelProps> = ({
@@ -22,6 +25,9 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
   onSend,
   isLoading,
   onOpenSaveCollection,
+  activeCollection,
+  onUpdateCollectionConfig,
+  onBlurUrl,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'params' | 'headers' | 'body' | 'variables'>('params');
 
@@ -42,6 +48,64 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       onSend();
+    }
+  };
+
+  // Combine collection level variables/headers with request level variables/headers for display
+  const colVars = activeCollection?.variables || [];
+  const reqVars = request.variables || [];
+  const colVarKeys = new Set(colVars.filter(v => v.key && v.key.trim()).map(v => v.key.trim()));
+  const displayVariables = [
+    ...colVars,
+    ...reqVars.filter(v => !colVarKeys.has(v.key.trim())),
+  ];
+
+  const colHeaders = activeCollection?.headers || [];
+  const reqHeaders = request.headers || [];
+  const colHeaderKeys = new Set(colHeaders.filter(h => h.key && h.key.trim()).map(h => h.key.trim()));
+  const displayHeaders = [
+    ...colHeaders,
+    ...reqHeaders.filter(h => !colHeaderKeys.has(h.key.trim())),
+  ];
+
+  const handleVariablesChange = (newVars: KeyValueItem[]) => {
+    if (activeCollection && onUpdateCollectionConfig) {
+      // Separate variables belonging to collection vs request specific vars
+      const updatedColVars: KeyValueItem[] = [];
+      const updatedReqVars: KeyValueItem[] = [];
+
+      newVars.forEach(v => {
+        if (colVarKeys.has(v.key.trim()) || (activeCollection && colVars.length === 0 && updatedColVars.length === 0)) {
+          updatedColVars.push(v);
+        } else {
+          updatedReqVars.push(v);
+        }
+      });
+
+      onUpdateCollectionConfig(activeCollection.id, updatedColVars, activeCollection.headers || []);
+      onChange({ ...request, variables: updatedReqVars });
+    } else {
+      onChange({ ...request, variables: newVars });
+    }
+  };
+
+  const handleHeadersChange = (newHeaders: KeyValueItem[]) => {
+    if (activeCollection && onUpdateCollectionConfig) {
+      const updatedColHeaders: KeyValueItem[] = [];
+      const updatedReqHeaders: KeyValueItem[] = [];
+
+      newHeaders.forEach(h => {
+        if (colHeaderKeys.has(h.key.trim())) {
+          updatedColHeaders.push(h);
+        } else {
+          updatedReqHeaders.push(h);
+        }
+      });
+
+      onUpdateCollectionConfig(activeCollection.id, activeCollection.variables || [], updatedColHeaders);
+      onChange({ ...request, headers: updatedReqHeaders });
+    } else {
+      onChange({ ...request, headers: newHeaders });
     }
   };
 
@@ -86,9 +150,12 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
         {/* URL Input */}
         <input
           type="text"
-          placeholder="요청할 URL을 입력하세요 (예: http://localhost:3002/api/echo 또는 https://httpbin.org/get)"
+          placeholder="요청할 URL을 입력하세요 (예: {{baseUrl}}/api/users 또는 https://api.example.com/users)"
           value={request.url}
           onChange={(e) => onChange({ ...request, url: e.target.value })}
+          onBlur={() => {
+            if (onBlurUrl) onBlurUrl();
+          }}
           onKeyDown={handleKeyDown}
           style={{
             flex: 1,
@@ -118,16 +185,6 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
             </>
           )}
         </button>
-
-        {/* Save to Collection Button */}
-        <button
-          className="btn-secondary"
-          onClick={onOpenSaveCollection}
-          style={{ height: '42px', padding: '0 14px', fontSize: '0.85rem' }}
-          title="현재 API 요청을 DB 컬렉션에 저장"
-        >
-          <BookmarkPlus size={16} color="var(--accent-primary)" /> 컬렉션 저장
-        </button>
       </div>
 
       {/* Sub Tabs */}
@@ -144,7 +201,7 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
           onClick={() => setActiveSubTab('headers')}
           icon={<Layers size={14} />}
           label="헤더 (Headers)"
-          badge={request.headers.filter(h => h.enabled && h.key).length}
+          badge={displayHeaders.filter(h => h.enabled && h.key).length}
         />
         <TabButton
           active={activeSubTab === 'body'}
@@ -158,7 +215,7 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
           onClick={() => setActiveSubTab('variables')}
           icon={<Braces size={14} />}
           label="변수 (Variables)"
-          badge={(request.variables || []).filter(v => v.enabled && v.key).length}
+          badge={displayVariables.filter(v => v.enabled && v.key).length}
         />
       </div>
 
@@ -175,8 +232,8 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
 
         {activeSubTab === 'headers' && (
           <KeyValueEditor
-            items={request.headers}
-            onChange={(headers) => onChange({ ...request, headers })}
+            items={displayHeaders}
+            onChange={handleHeadersChange}
             keyPlaceholder="헤더 이름 (예: Authorization)"
             valuePlaceholder="헤더 값 (예: Bearer token...)"
           />
@@ -184,10 +241,10 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
 
         {activeSubTab === 'variables' && (
           <KeyValueEditor
-            items={request.variables || []}
-            onChange={(variables) => onChange({ ...request, variables })}
+            items={displayVariables}
+            onChange={handleVariablesChange}
             keyPlaceholder="변수 이름 (예: baseUrl, token)"
-            valuePlaceholder="변수 값 (예: http://localhost:3002)"
+            valuePlaceholder="변수 값 (예: https://api.example.com 또는 http://localhost:포트)"
           />
         )}
 

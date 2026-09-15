@@ -34,6 +34,7 @@ import {
   updateCollectionGroupNameApi,
   deleteCollectionGroupApi,
   saveCollectionRequestItem,
+  updateCollectionRequestItemApi,
   deleteCollectionRequestItemApi,
   getCurrentUser,
   onAuthChange,
@@ -46,22 +47,13 @@ import {
 
 const createDefaultRequest = (): RequestState => ({
   method: 'GET',
-  url: '{{baseUrl}}/api/echo?query={{queryVal}}',
-  params: [
-    { id: '1', key: 'query', value: '{{queryVal}}', enabled: true },
-    { id: '2', key: 'page', value: '1', enabled: true },
-  ],
-  headers: [
-    { id: 'h1', key: 'Content-Type', value: 'application/json', enabled: true },
-    { id: 'h2', key: 'Accept', value: 'application/json', enabled: true },
-  ],
-  variables: [
-    { id: 'v1', key: 'baseUrl', value: 'http://localhost:3002', enabled: true },
-    { id: 'v2', key: 'queryVal', value: 'hello', enabled: true },
-  ],
+  url: '',
+  params: [],
+  headers: [],
+  variables: [],
   bodyType: 'json',
-  body: '{\n  "client": "RestFlow React",\n  "test": true\n}',
-  useProxy: true,
+  body: '',
+  useProxy: false,
 });
 
 const createInitialTab = (id = 'tab-1', title = '요청 1'): ApiTab => ({
@@ -73,7 +65,7 @@ const createInitialTab = (id = 'tab-1', title = '요청 1'): ApiTab => ({
 });
 
 export const App: React.FC = () => {
-  const [useProxy, setUseProxy] = useState<boolean>(true);
+  const [useProxy, setUseProxy] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Multi-Tab Api States
@@ -160,10 +152,32 @@ export const App: React.FC = () => {
     saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: filtered, activeTabId: newActiveId });
   };
 
-  const handleRenameTab = (id: string, newTitle: string) => {
-    const updatedTabs = tabs.map((t) => (t.id === id ? { ...t, title: newTitle } : t));
+  const handleRenameTab = async (id: string, newTitle: string) => {
+    const targetTab = tabs.find((t) => t.id === id);
+    const trimmed = newTitle.trim();
+    if (!targetTab || !trimmed || targetTab.title === trimmed) return;
+
+    const updatedTabs = tabs.map((t) => (t.id === id ? { ...t, title: trimmed } : t));
     setTabs(updatedTabs);
     saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: updatedTabs, activeTabId });
+
+    if (targetTab.collectionItemId) {
+      DLoading('시트 이름 변경 중...');
+      try {
+        await updateCollectionRequestItemApi(targetTab.collectionItemId, { name: trimmed });
+        setCollections((prev) =>
+          prev.map((col) => ({
+            ...col,
+            items: (col.items || []).map((it) =>
+              it.id === targetTab.collectionItemId ? { ...it, name: trimmed } : it
+            ),
+          }))
+        );
+        DLoading.dismiss('시트 이름이 변경되었습니다!');
+      } catch {
+        DLoading.dismiss('시트 이름 변경 실패');
+      }
+    }
   };
 
   // Sync Save Collection folder selection
@@ -193,11 +207,20 @@ export const App: React.FC = () => {
         setRequestPanelHeight(settings.requestPanelHeight);
       }
       if (Array.isArray(settings.tabs) && settings.tabs.length > 0) {
-        setTabs(settings.tabs);
-        if (settings.activeTabId && settings.tabs.some((t) => t.id === settings.activeTabId)) {
+        const cleanedTabs = settings.tabs.map(t => ({
+          ...t,
+          request: {
+            ...t.request,
+            url: t.request.url === '{{baseUrl}}/api/echo?query={{queryVal}}' ? '' : t.request.url,
+            variables: (t.request.variables || []).filter(v => v.key !== 'baseUrl' && v.key !== 'queryVal'),
+            params: (t.request.params || []).filter(p => !(p.key === 'query' && p.value === '{{queryVal}}')),
+          }
+        }));
+        setTabs(cleanedTabs);
+        if (settings.activeTabId && cleanedTabs.some((t) => t.id === settings.activeTabId)) {
           setActiveTabId(settings.activeTabId);
         } else {
-          setActiveTabId(settings.tabs[0].id);
+          setActiveTabId(cleanedTabs[0].id);
         }
       }
     }
@@ -539,25 +562,44 @@ export const App: React.FC = () => {
   };
 
   const handleSelectCollectionItem = (item: CollectionRequestItem, collection: CollectionGroup) => {
+    const defaultReq = createDefaultRequest();
     const newReq: RequestState = {
-      ...activeTab.request,
+      ...defaultReq,
       method: item.method || 'GET',
-      url: item.url,
-      params: Array.isArray(item.params) ? item.params : activeTab.request.params,
-      headers: Array.isArray(item.headers) ? item.headers : activeTab.request.headers,
+      url: item.url || '',
+      params: Array.isArray(item.params) ? item.params : [],
+      headers: Array.isArray(item.headers) ? item.headers : [],
+      variables: Array.isArray((item as any).variables) ? (item as any).variables : [],
       body: item.body || '',
+      useProxy: useProxy,
     };
 
-    // 1. Check if a sheet for this collection request item is already open in current tabs
+    const targetTitle = item.name;
+
+    // 1. Check if a sheet for this specific collection item is already open
     const existingTab = tabs.find(
       (t) =>
-        (t.activeCollection?.id === collection.id && t.title === `${item.method} ${item.name}`) ||
-        (t.request.method === item.method && t.request.url === item.url)
+        t.collectionItemId === item.id ||
+        (t.activeCollection?.id === collection.id && t.title === targetTitle)
     );
 
     if (existingTab) {
-      // Switch focus to existing tab
+      // Update existing tab with latest request data and switch focus to it
+      const updatedTabs = tabs.map((t) =>
+        t.id === existingTab.id
+          ? {
+            ...t,
+            request: newReq,
+            title: targetTitle,
+            activeCollection: collection,
+            collectionItemId: item.id,
+            type: 'request' as const,
+          }
+          : t
+      );
+      setTabs(updatedTabs);
       setActiveTabId(existingTab.id);
+      saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: updatedTabs, activeTabId: existingTab.id });
       return;
     }
 
@@ -565,17 +607,34 @@ export const App: React.FC = () => {
     const isUntouchedDefaultTab =
       tabs.length === 1 &&
       !activeTab.response &&
-      activeTab.request.url === createDefaultRequest().url &&
+      activeTab.type !== 'collectionConfig' &&
+      !activeTab.collectionItemId &&
+      activeTab.request.url === defaultReq.url &&
       (activeTab.title === '요청 1' || activeTab.title.startsWith('GET /api/echo'));
 
     if (isUntouchedDefaultTab) {
       updateActiveTab({
         request: newReq,
-        title: `${item.method} ${item.name}`,
+        title: targetTitle,
         activeCollection: collection,
+        collectionItemId: item.id,
+        type: 'request',
       });
     } else {
-      handleCreateTab(newReq, `${item.method} ${item.name}`, collection);
+      const newTabId = `tab-item-${item.id}-${Date.now()}`;
+      const newTab: ApiTab = {
+        id: newTabId,
+        title: targetTitle,
+        request: newReq,
+        response: null,
+        activeCollection: collection,
+        collectionItemId: item.id,
+        type: 'request',
+      };
+      const newTabs = [...tabs, newTab];
+      setTabs(newTabs);
+      setActiveTabId(newTabId);
+      saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: newTabs, activeTabId: newTabId });
     }
   };
 
@@ -588,10 +647,14 @@ export const App: React.FC = () => {
   };
 
   const handleRenameCollectionGroup = async (id: string, newName: string) => {
+    const trimmed = newName.trim();
+    const target = collections.find((c) => c.id === id);
+    if (!target || !trimmed || target.name === trimmed) return;
+
     DLoading('컬렉션 폴더 이름 저장 중...');
-    await updateCollectionGroupNameApi(id, newName);
+    await updateCollectionGroupNameApi(id, trimmed);
     setCollections((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, name: newName } : c))
+      prev.map((c) => (c.id === id ? { ...c, name: trimmed } : c))
     );
     setTabs((prev) => {
       const updatedTabs = prev.map((t) => {
@@ -601,9 +664,9 @@ export const App: React.FC = () => {
         if (isConfigTab || isActiveCollectionMatch) {
           return {
             ...t,
-            title: isConfigTab ? `📁 ${newName} 설정` : t.title,
+            title: isConfigTab ? `📁 ${trimmed} 설정` : t.title,
             activeCollection: t.activeCollection
-              ? { ...t.activeCollection, name: newName }
+              ? { ...t.activeCollection, name: trimmed }
               : t.activeCollection,
           };
         }
@@ -615,12 +678,83 @@ export const App: React.FC = () => {
     DLoading.dismiss('컬렉션 이름이 변경되었습니다!');
   };
 
+  const handleRenameCollectionItem = async (itemId: string, newName: string) => {
+    const trimmed = newName.trim();
+    let targetItem: CollectionRequestItem | null = null;
+    for (const col of collections) {
+      const found = col.items?.find((i) => i.id === itemId);
+      if (found) {
+        targetItem = found;
+        break;
+      }
+    }
+
+    if (!targetItem || !trimmed || targetItem.name === trimmed) return;
+
+    DLoading('요청 항목 이름 변경 중...');
+    try {
+      await updateCollectionRequestItemApi(itemId, { name: trimmed });
+      setCollections((prev) =>
+        prev.map((col) => ({
+          ...col,
+          items: (col.items || []).map((it) =>
+            it.id === itemId ? { ...it, name: trimmed } : it
+          ),
+        }))
+      );
+      setTabs((prev) => {
+        const updated = prev.map((t) =>
+          t.collectionItemId === itemId || (t.activeCollection && t.title === targetItem!.name)
+            ? { ...t, title: trimmed }
+            : t
+        );
+        saveUserSettings({ sidebarWidth, requestPanelHeight, tabs: updated, activeTabId });
+        return updated;
+      });
+      DLoading.dismiss('요청 항목 이름이 변경되었습니다!');
+    } catch (e) {
+      DLoading.dismiss('요청 항목 이름 변경 실패');
+    }
+  };
+
   const handleDeleteCollectionItem = async (id: string) => {
     await deleteCollectionRequestItemApi(id);
     setCollections((prev) =>
       prev.map((col) => ({
         ...col,
         items: col.items.filter((item) => item.id !== id),
+      }))
+    );
+  };
+
+  const handleAutoSaveActiveTabRequestItem = async () => {
+    if (!activeTab || !activeTab.collectionItemId) return;
+    const itemId = activeTab.collectionItemId;
+    const req = activeTab.request;
+
+    await updateCollectionRequestItemApi(itemId, {
+      method: req.method,
+      url: req.url,
+      params: req.params,
+      headers: req.headers,
+      body: req.body,
+    });
+
+    setCollections((prev) =>
+      prev.map((col) => ({
+        ...col,
+        items: (col.items || []).map((it) =>
+          it.id === itemId
+            ? {
+                ...it,
+                method: req.method,
+                url: req.url,
+                params: req.params,
+                headers: req.headers,
+                body: req.body,
+              }
+            : it
+        ),
       }))
     );
   };
@@ -706,7 +840,7 @@ export const App: React.FC = () => {
       collectionId: colGroup.id,
       name: reqName.trim(),
       method: 'GET',
-      url: '{{baseUrl}}/api/echo',
+      url: '',
       params: [],
       headers: [],
       body: '',
@@ -776,10 +910,13 @@ export const App: React.FC = () => {
           onDeleteCollectionItem={handleDeleteCollectionItem}
           onOpenCollectionConfig={handleOpenCollectionConfigTab}
           onRenameCollectionGroup={handleRenameCollectionGroup}
+          onRenameCollectionItem={handleRenameCollectionItem}
           onAddRequestToCollection={handleAddRequestToCollection}
           user={user}
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onCreateFolderClick={handleCreateFolderDirectly}
+          activeCollectionItemId={activeTab.collectionItemId}
+          activeConfigCollectionId={activeTab.configCollectionId}
         />
 
         {/* Vertical Resizer between Sidebar and Main Frame */}
@@ -851,6 +988,9 @@ export const App: React.FC = () => {
                 onSend={handleSend}
                 isLoading={isLoading}
                 onOpenSaveCollection={handleOpenSaveCollection}
+                activeCollection={activeTab.activeCollection}
+                onUpdateCollectionConfig={handleSaveCollectionConfigDirect}
+                onBlurUrl={handleAutoSaveActiveTabRequestItem}
               />
 
               {/* Horizontal Resizer between Request Panel and Response Panel */}
@@ -1175,7 +1315,7 @@ export const App: React.FC = () => {
                 items={configVariables}
                 onChange={setConfigVariables}
                 keyPlaceholder="공통 변수명 (예: baseUrl)"
-                valuePlaceholder="변수 값 (예: http://localhost:3002)"
+                valuePlaceholder="변수 값 (예: https://api.example.com 또는 http://localhost:포트)"
               />
             )}
 

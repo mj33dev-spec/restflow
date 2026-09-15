@@ -29,8 +29,10 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
   };
 
   const handleSaveRename = (id: string) => {
-    if (editingTitle.trim()) {
-      onRenameTab(id, editingTitle.trim());
+    const currentTab = tabs.find((t) => t.id === id);
+    const trimmed = editingTitle.trim();
+    if (trimmed && currentTab && currentTab.title !== trimmed) {
+      onRenameTab(id, trimmed);
     }
     setEditingTabId(null);
   };
@@ -133,7 +135,7 @@ export const SpreadsheetTabBar: React.FC<SpreadsheetTabBarProps> = ({
                 />
               ) : (
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {tab.title}
+                  {(tab.title || '').replace(new RegExp(`^${tab.request.method}\\s+`, 'i'), '').trim() || tab.title}
                 </span>
               )}
 

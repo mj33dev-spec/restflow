@@ -55,28 +55,28 @@ export const Header: React.FC<HeaderProps> = ({
         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>빠른 에코 테스트:</span>
         <button
           className="btn-secondary"
-          onClick={() => onQuickPreset('GET', 'http://localhost:3002/api/echo?query=hello')}
+          onClick={() => onQuickPreset('GET', 'http://localhost:5000/api/items')}
           style={{ fontSize: '0.75rem', padding: '4px 10px' }}
         >
           <PlayCircle size={14} color="#10b981" /> GET 테스트
         </button>
         <button
           className="btn-secondary"
-          onClick={() => onQuickPreset('POST', 'http://localhost:3002/api/echo', JSON.stringify({ name: '홍길동', action: '데이터 생성' }, null, 2))}
+          onClick={() => onQuickPreset('POST', 'http://localhost:5000/api/items', JSON.stringify({ name: '신규 상품', description: '테스트 상품', price: 25000 }, null, 2))}
           style={{ fontSize: '0.75rem', padding: '4px 10px' }}
         >
           <PlayCircle size={14} color="#f59e0b" /> POST 테스트
         </button>
         <button
           className="btn-secondary"
-          onClick={() => onQuickPreset('PUT', 'http://localhost:3002/api/echo', JSON.stringify({ id: 101, title: '수정된 제목' }, null, 2))}
+          onClick={() => onQuickPreset('PUT', 'http://localhost:5000/api/items/1', JSON.stringify({ name: '수정된 상품', description: '수정된 설명', price: 30000 }, null, 2))}
           style={{ fontSize: '0.75rem', padding: '4px 10px' }}
         >
           <PlayCircle size={14} color="#3b82f6" /> PUT 테스트
         </button>
         <button
           className="btn-secondary"
-          onClick={() => onQuickPreset('DELETE', 'http://localhost:3002/api/echo?id=101')}
+          onClick={() => onQuickPreset('DELETE', 'http://localhost:5000/api/items/1')}
           style={{ fontSize: '0.75rem', padding: '4px 10px' }}
         >
           <PlayCircle size={14} color="#ef4444" /> DELETE 테스트
@@ -90,7 +90,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
             <ShieldCheck size={16} color={useProxy ? '#10b981' : '#64748b'} />
             <span style={{ color: useProxy ? '#f1f5f9' : 'var(--text-muted)' }}>
-              NestJS 프록시 (CORS 우회)
+              CORS 우회 프록시
             </span>
           </div>
           <label style={{

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { RequestState, ResponseResult, HistoryItem, KeyValueItem, ApiTab } from '../types';
 import { supabase } from './supabaseClient';
 
-const BACKEND_BASE_URL = 'http://localhost:3002';
+const BACKEND_BASE_URL = 'http://localhost:5000';
 
 // -------------------------------------------------------------
 // 0. Variable Interpolation Helper
@@ -23,16 +23,20 @@ export const executeHttpRequest = async (
   collectionHeaders: KeyValueItem[] = []
 ): Promise<ResponseResult> => {
   // Extract active variables into a map (Collection vars + Request vars)
-  const allVars = [...(collectionVariables || []), ...(req.variables || [])];
   const varsMap: Record<string, string> = {};
-  allVars.filter(v => v.enabled && v.key && v.key.trim()).forEach(v => {
+  // 1) Apply collection level variables first
+  (collectionVariables || []).filter(v => v.enabled && v.key && v.key.trim()).forEach(v => {
     varsMap[v.key.trim()] = v.value;
   });
+  // 2) Apply request level variables (override only if non-empty or new variable)
+  (req.variables || []).filter(v => v.enabled && v.key && v.key.trim()).forEach(v => {
+    const key = v.key.trim();
+    if (v.value !== '' || !(key in varsMap)) {
+      varsMap[key] = v.value;
+    }
+  });
 
-  // Default fallback for {{baseUrl}} if missing or empty
-  if (!('baseUrl' in varsMap) || !varsMap['baseUrl']) {
-    varsMap['baseUrl'] = BACKEND_BASE_URL;
-  }
+  // Do not force port fallback for {{baseUrl}}
 
   let finalUrl = interpolateVariables(req.url, varsMap);
   // Clean up any remaining unhandled {{var}} templates
@@ -40,8 +44,9 @@ export const executeHttpRequest = async (
 
   // Add missing scheme/host if needed
   if (finalUrl.startsWith('/')) {
-    finalUrl = `${BACKEND_BASE_URL}${finalUrl}`;
-  } else if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+    const base = varsMap['baseUrl'] || '';
+    finalUrl = base ? `${base.replace(/\/+$/, '')}${finalUrl}` : `http://${finalUrl.replace(/^\/+/, '')}`;
+  } else if (finalUrl && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
     finalUrl = `http://${finalUrl}`;
   }
 
@@ -66,6 +71,12 @@ export const executeHttpRequest = async (
     activeHeaders[key] = val;
   });
 
+  // Auto-set Content-Type if bodyType is json and no custom Content-Type header is defined
+  const hasContentType = Object.keys(activeHeaders).some(k => k.toLowerCase() === 'content-type');
+  if (!hasContentType && req.method !== 'GET' && req.method !== 'HEAD' && req.bodyType === 'json') {
+    activeHeaders['Content-Type'] = 'application/json';
+  }
+
   let rawBody = req.body;
   if (rawBody && typeof rawBody === 'string') {
     rawBody = interpolateVariables(rawBody, varsMap);
@@ -75,6 +86,11 @@ export const executeHttpRequest = async (
   if (req.method !== 'GET' && req.method !== 'HEAD' && rawBody && req.bodyType === 'json') {
     try {
       parsedBody = JSON.parse(rawBody);
+      if (typeof parsedBody === 'string') {
+        try {
+          parsedBody = JSON.parse(parsedBody);
+        } catch {}
+      }
     } catch (e) {
       // Keep as string if raw or invalid JSON
     }
@@ -147,7 +163,7 @@ export const executeHttpRequest = async (
         data: {
           error: err.message || 'CORS 제약 또는 네트워크 연결 실패.',
           message: '대상 URL에 접근할 수 없거나 CORS 제약으로 인해 응답을 수신하지 못했습니다.',
-          tip: "상단의 'NestJS 프록시 서버' 토글을 켜서 CORS 및 네트워크 제약을 우회해보세요!",
+          tip: "상단의 'CORS 우회 프록시' 토글을 켜서 CORS 및 네트워크 제약을 우회해보세요!",
         },
         timeMs: endTime - startTime,
         sizeBytes: 0,
@@ -156,7 +172,7 @@ export const executeHttpRequest = async (
     }
   };
 
-  // 1. Send via NestJS Backend Proxy (if useProxy enabled)
+  // 1. Send via CORS Backend Proxy (if useProxy enabled)
   if (req.useProxy) {
     try {
       const res = await axios.post(`${BACKEND_BASE_URL}/api/proxy`, {
@@ -200,9 +216,9 @@ export const executeHttpRequest = async (
         statusText: '프록시 요청 실패',
         headers: {},
         data: err.response?.data || {
-          error: err.message || 'NestJS 프록시 서버 연결 실패',
-          message: 'NestJS 프록시 서버(http://localhost:3002)에 연결하지 못했습니다.',
-          tip: '백엔드 서버가 3002 포트에서 실행 중인지 확인하거나, 상단 프록시 토글을 끄고 직접 브라우저 요청을 시도하세요.',
+          error: err.message || 'CORS 우회 프록시 연결 실패',
+          message: 'CORS 우회 프록시 서버에 연결하지 못했습니다.',
+          tip: '요청하려는 API 서버가 실행 중인지 확인하거나, 상단 프록시 토글을 끄고 직접 브라우저 요청을 시도하세요.',
         },
         timeMs: Date.now() - startTime,
         sizeBytes: 0,
@@ -424,10 +440,12 @@ export const fetchCollections = async (): Promise<any[]> => {
   let dbList: any[] = [];
 
   try {
-    const { data: collectionsData, error: collectionsError } = await supabase
-      .from('collections')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const { data: { user } } = await supabase.auth.getUser();
+    let query = supabase.from('collections').select('*');
+    if (user) {
+      query = query.eq('user_id', user.id);
+    }
+    const { data: collectionsData, error: collectionsError } = await query.order('created_at', { ascending: false });
 
     if (!collectionsError && collectionsData) {
       let itemsData: any[] = [];
@@ -471,7 +489,7 @@ export const fetchCollections = async (): Promise<any[]> => {
     // Fallback gracefully
   }
 
-  // Merge DB list and Local list (prefer DB version if duplicate id)
+  // Safely merge DB list and Local list (prefer DB version if duplicate id)
   const dbIds = new Set(dbList.map((c) => c.id));
   const uniqueLocals = localList.filter((c) => !dbIds.has(c.id));
   return [...dbList, ...uniqueLocals];
@@ -669,6 +687,39 @@ export const saveCollectionRequestItem = async (item: {
   saveStoredLocalCollections(updatedLocals);
 
   return savedItem;
+};
+
+export const updateCollectionRequestItemApi = async (
+  itemId: string,
+  update: {
+    name?: string;
+    method?: string;
+    url?: string;
+    params?: any[];
+    headers?: any[];
+    body?: string;
+  }
+): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('collection_items')
+      .update(update)
+      .eq('id', itemId);
+
+    // Also update local storage
+    const locals = getStoredLocalCollections();
+    const updatedLocals = locals.map((col) => ({
+      ...col,
+      items: (col.items || []).map((it: any) =>
+        it.id === itemId ? { ...it, ...update } : it
+      ),
+    }));
+    saveStoredLocalCollections(updatedLocals);
+
+    return !error;
+  } catch (e) {
+    return false;
+  }
 };
 
 export const deleteCollectionRequestItemApi = async (id: string): Promise<boolean> => {

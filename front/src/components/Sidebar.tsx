@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { History, Bookmark, Trash2, Clock, LogIn, Folder, ChevronDown, ChevronRight, Settings, Plus, Pencil } from 'lucide-react';
+import { History, Bookmark, Trash2, Clock, Folder, ChevronDown, ChevronRight, Plus, Pencil } from 'lucide-react';
 import { HistoryItem, CollectionGroup, CollectionRequestItem } from '../types';
 import { MethodBadge } from './common/MethodBadge';
 import { EmptyState } from './common/EmptyState';
@@ -18,10 +18,13 @@ interface SidebarProps {
   onDeleteCollectionItem: (id: string) => void;
   onOpenCollectionConfig: (collection: CollectionGroup) => void;
   onRenameCollectionGroup?: (id: string, newName: string) => Promise<void>;
+  onRenameCollectionItem?: (id: string, newName: string) => Promise<void>;
   onAddRequestToCollection?: (collection: CollectionGroup) => void;
   user: any;
   onOpenAuthModal: () => void;
   onCreateFolderClick: () => void;
+  activeCollectionItemId?: string;
+  activeConfigCollectionId?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -36,16 +39,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteCollectionItem,
   onOpenCollectionConfig,
   onRenameCollectionGroup,
+  onRenameCollectionItem,
   onAddRequestToCollection,
   user,
   onOpenAuthModal,
   onCreateFolderClick,
+  activeCollectionItemId,
+  activeConfigCollectionId,
 }) => {
   const [activeTab, setActiveTab] = useState<'history' | 'collections'>('history');
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState<string>('');
   const [hoveredFolderId, setHoveredFolderId] = useState<string | null>(null);
+
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemName, setEditingItemName] = useState<string>('');
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
 
   const historyList = Array.isArray(history) ? history : [];
   const collectionList = Array.isArray(collections) ? collections : [];
@@ -57,15 +67,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }));
   };
 
-  const handleFinishRename = async (folderId: string) => {
-    if (!editingFolderName.trim()) {
+  const handleFinishRename = async (folderId: string, currentName: string) => {
+    const trimmed = editingFolderName.trim();
+    if (!trimmed || trimmed === currentName) {
       setEditingFolderId(null);
       return;
     }
     if (onRenameCollectionGroup) {
-      await onRenameCollectionGroup(folderId, editingFolderName.trim());
+      await onRenameCollectionGroup(folderId, trimmed);
     }
     setEditingFolderId(null);
+  };
+
+  const handleFinishRenameItem = async (itemId: string, currentName: string) => {
+    const trimmed = editingItemName.trim();
+    if (!trimmed || trimmed === currentName) {
+      setEditingItemId(null);
+      return;
+    }
+    if (onRenameCollectionItem) {
+      await onRenameCollectionItem(itemId, trimmed);
+    }
+    setEditingItemId(null);
   };
 
   return (
@@ -289,7 +312,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title="저장된 컬렉션 폴더가 없습니다."
                 description={
                   <>
-                    우측 상단 <strong>[+ 새 폴더]</strong> 버튼을 누르시거나 주소창 옆의 <strong>[컬렉션 저장]</strong>을 눌러보세요.
+                    상단 <strong>[+ 새 폴더]</strong> 버튼을 눌러 새 컬렉션 폴더를 생성해 보세요.
                   </>
                 }
               />
@@ -297,6 +320,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               collectionList.map((colGroup) => {
                 const isExpanded = expandedFolders[colGroup.id] !== false; // Default expanded
                 const items = colGroup.items || [];
+                const isConfigSelected = activeConfigCollectionId === colGroup.id;
 
                 return (
                   <div
@@ -319,15 +343,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         cursor: 'pointer',
-                        background: 'rgba(255,255,255,0.03)',
+                        background: isConfigSelected ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255,255,255,0.03)',
+                        border: isConfigSelected ? '1px solid var(--accent-primary)' : 'none',
                         borderBottom: isExpanded && items.length > 0 ? '1px solid var(--border-color)' : 'none',
                         transition: 'background 0.15s ease'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                        if (!isConfigSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                        if (!isConfigSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
@@ -360,10 +385,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onChange={(e) => setEditingFolderName(e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleFinishRename(colGroup.id);
+                              if (e.key === 'Enter') handleFinishRename(colGroup.id, colGroup.name);
                               if (e.key === 'Escape') setEditingFolderId(null);
                             }}
-                            onBlur={() => handleFinishRename(colGroup.id)}
+                            onBlur={() => handleFinishRename(colGroup.id, colGroup.name)}
                             autoFocus
                             style={{
                               background: '#0d1117',
@@ -476,54 +501,115 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             하위 요청 항목이 없습니다.
                           </div>
                         ) : (
-                          items.map((reqItem) => (
-                            <div
-                              key={reqItem.id}
-                              onClick={() => onSelectCollectionItem(reqItem, colGroup)}
-                              style={{
-                                padding: '8px 10px',
-                                borderRadius: '6px',
-                                marginTop: '4px',
-                                background: 'rgba(0,0,0,0.2)',
-                                border: '1px solid rgba(255,255,255,0.05)',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                fontSize: '0.8rem',
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'rgba(0,0,0,0.2)';
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                                <MethodBadge method={reqItem.method} fontSize="0.68rem" padding="2px 6px" />
-                                <span style={{ color: 'var(--text-main)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {reqItem.name}
-                                </span>
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteCollectionItem(reqItem.id);
-                                }}
+                          items.map((reqItem) => {
+                            const isItemSelected = activeCollectionItemId === reqItem.id;
+                            return (
+                              <div
+                                key={reqItem.id}
+                                onClick={() => onSelectCollectionItem(reqItem, colGroup)}
                                 style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: 'var(--text-subtle)',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  marginTop: '4px',
+                                  background: isItemSelected ? 'rgba(99, 102, 241, 0.28)' : 'rgba(0,0,0,0.2)',
+                                  border: isItemSelected ? '1px solid var(--accent-primary)' : '1px solid rgba(255,255,255,0.05)',
+                                  boxShadow: isItemSelected ? '0 0 10px rgba(99, 102, 241, 0.3)' : 'none',
                                   cursor: 'pointer',
-                                  padding: '2px'
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  fontSize: '0.8rem',
+                                  transition: 'all 0.15s ease'
                                 }}
-                                title="요청 항목 삭제"
+                                onMouseEnter={(e) => {
+                                  if (!isItemSelected) e.currentTarget.style.background = 'rgba(99, 102, 241, 0.12)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isItemSelected) e.currentTarget.style.background = 'rgba(0,0,0,0.2)';
+                                }}
                               >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          ))
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
+                                  <MethodBadge method={reqItem.method} fontSize="0.68rem" padding="2px 6px" />
+                                  {editingItemId === reqItem.id ? (
+                                    <input
+                                      type="text"
+                                      value={editingItemName}
+                                      onChange={(e) => setEditingItemName(e.target.value)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleFinishRenameItem(reqItem.id, reqItem.name);
+                                        if (e.key === 'Escape') setEditingItemId(null);
+                                      }}
+                                      onBlur={() => handleFinishRenameItem(reqItem.id, reqItem.name)}
+                                      autoFocus
+                                      style={{
+                                        background: '#0d1117',
+                                        border: '1px solid var(--accent-primary)',
+                                        color: '#fff',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 600,
+                                        padding: '1px 5px',
+                                        borderRadius: '4px',
+                                        outline: 'none',
+                                        width: '110px'
+                                      }}
+                                    />
+                                  ) : (
+                                    <span
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingItemId(reqItem.id);
+                                        setEditingItemName(reqItem.name);
+                                      }}
+                                      onMouseEnter={() => setHoveredItemId(reqItem.id)}
+                                      onMouseLeave={() => setHoveredItemId(null)}
+                                      style={{
+                                        color: 'var(--text-main)',
+                                        fontWeight: 600,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        borderBottom: hoveredItemId === reqItem.id ? '1px dashed var(--accent-primary)' : '1px solid transparent',
+                                        transition: 'all 0.15s ease'
+                                      }}
+                                      title="클릭하여 요청 이름 수정"
+                                    >
+                                      {reqItem.name}
+                                      <Pencil
+                                        size={11}
+                                        style={{
+                                          opacity: hoveredItemId === reqItem.id ? 1 : 0,
+                                          transition: 'opacity 0.15s ease',
+                                          color: 'var(--accent-primary)',
+                                          flexShrink: 0
+                                        }}
+                                      />
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteCollectionItem(reqItem.id);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-subtle)',
+                                    cursor: 'pointer',
+                                    padding: '2px'
+                                  }}
+                                  title="요청 항목 삭제"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     )}
@@ -533,10 +619,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
         </div>
-      )
-      }
-    </aside >
+      )}
+    </aside>
   );
 };
-
-
