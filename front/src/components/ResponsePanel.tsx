@@ -15,6 +15,7 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({ response, isLoadin
     return (
       <div style={{
         flex: 1,
+        minHeight: '250px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -41,6 +42,7 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({ response, isLoadin
     return (
       <div style={{
         flex: 1,
+        minHeight: '250px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -94,6 +96,7 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({ response, isLoadin
   return (
     <div style={{
       flex: 1,
+      minHeight: '250px',
       display: 'flex',
       flexDirection: 'column',
       background: 'var(--bg-primary)',

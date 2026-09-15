@@ -116,6 +116,7 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({
       display: 'flex',
       flexDirection: 'column',
       height: height !== undefined ? `${height}%` : '50%',
+      minHeight: '300px',
       flexShrink: 0,
       borderBottom: '1px solid var(--border-color)',
       background: 'var(--bg-primary)'

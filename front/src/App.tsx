@@ -378,10 +378,15 @@ export const App: React.FC = () => {
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!splitAreaRef.current) return;
       const rect = splitAreaRef.current.getBoundingClientRect();
-      const offsetY = moveEvent.clientY - rect.top;
-      const percent = (offsetY / rect.height) * 100;
-      finalPercent = Math.min(Math.max(percent, 15), 85);
-      setRequestPanelHeight(finalPercent);
+      const rawOffsetY = moveEvent.clientY - rect.top - 2.5;
+
+      const minTop = 300;
+      const maxTop = Math.max(minTop, rect.height - 250 - 5);
+
+      const clampedOffsetY = Math.min(Math.max(rawOffsetY, minTop), maxTop);
+      const percent = (clampedOffsetY / rect.height) * 100;
+      finalPercent = percent;
+      setRequestPanelHeight(percent);
     };
 
     const handleMouseUp = () => {
@@ -1246,62 +1251,37 @@ export const App: React.FC = () => {
           ) : (
             <div
               ref={splitAreaRef}
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                position: 'relative',
-              }}
-            >
-              {/* Active Collection Inheritance Status Bar */}
-              {activeTab.activeCollection && (
-                <div style={{
-                  background: 'rgba(99, 102, 241, 0.1)',
-                  borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
-                  padding: '6px 16px',
-                  fontSize: '0.78rem',
-                  color: '#818cf8',
+                style={{
+                  flex: 1,
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexShrink: 0
-                }}>
-                  <span>
-                    📁 활성화된 컬렉션 폴더: <strong>{activeTab.activeCollection.name}</strong> (공통 변수 {activeTab.activeCollection.variables.length}개, 공통 헤더 {activeTab.activeCollection.headers.length}개 상속 중)
-                  </span>
-                  <button
-                    onClick={() => updateActiveTab({ activeCollection: null })}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer', fontSize: '0.75rem' }}
-                  >
-                    상속 해제
-                  </button>
-                </div>
-              )}
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}
+              >
+                {/* Top Panel: Request Panel */}
+                <RequestPanel
+                  height={requestPanelHeight}
+                  request={activeTab.request}
+                  onChange={handleRequestChange}
+                  onSend={handleSend}
+                  isLoading={isLoading}
+                  onOpenSaveCollection={handleOpenSaveCollection}
+                  activeCollection={activeTab.activeCollection}
+                  onUpdateCollectionConfig={handleSaveCollectionConfigDirect}
+                  onBlurUrl={handleAutoSaveActiveTabRequestItem}
+                />
 
-              {/* Top Panel: Request Panel */}
-              <RequestPanel
-                height={requestPanelHeight}
-                request={activeTab.request}
-                onChange={handleRequestChange}
-                onSend={handleSend}
-                isLoading={isLoading}
-                onOpenSaveCollection={handleOpenSaveCollection}
-                activeCollection={activeTab.activeCollection}
-                onUpdateCollectionConfig={handleSaveCollectionConfigDirect}
-                onBlurUrl={handleAutoSaveActiveTabRequestItem}
-              />
+                {/* Horizontal Resizer between Request Panel and Response Panel */}
+                <div
+                  className={`resizer-horizontal ${isDraggingBody ? 'active' : ''}`}
+                  onMouseDown={handleBodyMouseDown}
+                  title="드래그하여 요청/응답 패널 높이 조절"
+                />
 
-              {/* Horizontal Resizer between Request Panel and Response Panel */}
-              <div
-                className={`resizer-horizontal ${isDraggingBody ? 'active' : ''}`}
-                onMouseDown={handleBodyMouseDown}
-                title="드래그하여 요청/응답 패널 높이 조절"
-              />
-
-              {/* Middle Panel: Response Panel */}
-              <ResponsePanel response={activeTab.response} isLoading={isLoading} />
-            </div>
+                {/* Middle Panel: Response Panel */}
+                <ResponsePanel response={activeTab.response} isLoading={isLoading} />
+              </div>
           )}
 
           {/* Bottom Panel Frame: Excel Spreadsheet Sheet Tab Bar */}

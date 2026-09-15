@@ -3,14 +3,13 @@ import { Zap, ShieldCheck, PlayCircle, LogIn, LogOut, User } from 'lucide-react'
 import { HttpMethod } from '../types';
 
 interface HeaderProps {
-  onQuickPreset: (method: HttpMethod, url: string, body?: string) => void;
+  onQuickPreset?: (method: HttpMethod, url: string, body?: string) => void;
   user: any;
   onOpenAuthModal: () => void;
   onSignOut: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  onQuickPreset,
   user,
   onOpenAuthModal,
   onSignOut,
@@ -46,38 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Quick Test Presets */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>빠른 에코 테스트:</span>
-        <button
-          className="btn-secondary"
-          onClick={() => onQuickPreset('GET', 'http://localhost:5000/api/items')}
-          style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-        >
-          <PlayCircle size={14} color="#10b981" /> GET 테스트
-        </button>
-        <button
-          className="btn-secondary"
-          onClick={() => onQuickPreset('POST', 'http://localhost:5000/api/items', JSON.stringify({ name: '신규 상품', description: '테스트 상품', price: 25000 }, null, 2))}
-          style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-        >
-          <PlayCircle size={14} color="#f59e0b" /> POST 테스트
-        </button>
-        <button
-          className="btn-secondary"
-          onClick={() => onQuickPreset('PUT', 'http://localhost:5000/api/items/1', JSON.stringify({ name: '수정된 상품', description: '수정된 설명', price: 30000 }, null, 2))}
-          style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-        >
-          <PlayCircle size={14} color="#3b82f6" /> PUT 테스트
-        </button>
-        <button
-          className="btn-secondary"
-          onClick={() => onQuickPreset('DELETE', 'http://localhost:5000/api/items/1')}
-          style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-        >
-          <PlayCircle size={14} color="#ef4444" /> DELETE 테스트
-        </button>
-      </div>
+
 
       {/* Right Controls (Auth) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
